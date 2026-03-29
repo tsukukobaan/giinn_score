@@ -3,7 +3,7 @@
 """
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from evaluator import (
     QAPairEvaluator, detect_duplicates,
@@ -163,9 +163,6 @@ class TestDuplicateDetection:
 
         # 蓮舫と辻元の質問は同じ政治資金スキャンダルについて（類似度≈0.39）
         detect_duplicates(pairs, threshold=0.35)
-
-        renho_pair = next(p for p in pairs if p.question.speaker == "蓮舫")
-        tsujimoto_pair = next(p for p in pairs if p.question.speaker == "辻元清美")
 
         # どちらかが重複としてマークされるはず
         duplicates = [p for p in pairs if p.is_duplicate]

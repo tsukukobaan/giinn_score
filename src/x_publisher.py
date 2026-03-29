@@ -237,7 +237,7 @@ class XPublisher:
         tv_url = SHUGIINTV_URL if "衆" in result.house else SANGIINTV_URL
 
         lines = [
-            f"\U0001f3c6 本日のベスト質疑\n",
+            "\U0001f3c6 本日のベスト質疑\n",
             f"{member.name} 議員（{member.party}）",
             f"総合スコア: {member.overall_score}点\n",
             f"\u2705 本質性 {member.avg_substantiveness} | 具体性 {member.avg_specificity}",

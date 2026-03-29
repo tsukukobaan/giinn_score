@@ -4,7 +4,6 @@
 
 import tempfile
 
-from models import QAPair
 from qa_extractor import QAPairExtractor
 from master_manager import MasterManager
 from mock_data import generate_mock_meeting

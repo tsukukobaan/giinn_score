@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from models import (
-    QAPair, Member, MemberTerm, Respondent, RespondentPosition,
+    QAPair, Member, MemberTerm, Respondent,
 )
 
 logger = logging.getLogger(__name__)

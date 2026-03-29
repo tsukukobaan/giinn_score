@@ -5,7 +5,7 @@
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from kokkai_fetcher import KokkaiAPIClient
 

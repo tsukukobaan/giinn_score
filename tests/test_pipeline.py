@@ -75,7 +75,7 @@ class TestPipelineFlow:
             pipeline = _make_pipeline(tmpdir)
             meeting = generate_mock_meeting()
 
-            result = pipeline._process_meeting(meeting, session=215)
+            pipeline._process_meeting(meeting, session=215)
 
             result_file = Path(tmpdir) / "2026-03-10_参議院.json"
             assert result_file.exists()
