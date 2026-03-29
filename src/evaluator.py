@@ -184,7 +184,9 @@ class QAPairEvaluator:
             qa_pair.question_scores = scores["question_scores"]
             qa_pair.answer_scores = scores["answer_scores"]
             qa_pair.topic_relevance = scores["topic_relevance"]
-            self._save_cache(qa_pair)
+            # スコアが全0でなければキャッシュ（API失敗時の空データを防ぐ）
+            if qa_pair.question_scores.average > 0 or qa_pair.answer_scores.average > 0:
+                self._save_cache(qa_pair)
             logger.info(
                 "評価完了: %s → Q:%.1f A:%.1f R:%.0f",
                 qa_pair.question.speaker,
