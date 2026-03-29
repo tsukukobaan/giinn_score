@@ -66,11 +66,11 @@ class QAPairExtractor:
         return pairs
 
     def _is_chair(self, sp: Speech) -> bool:
-        pos = sp.speaker_position + sp.speaker_role
+        pos = (sp.speaker_position or "") + (sp.speaker_role or "")
         return any(kw in pos for kw in self.CHAIR_KEYWORDS)
 
     def _is_answerer(self, sp: Speech) -> bool:
-        pos = sp.speaker_position
+        pos = sp.speaker_position or ""
         if any(p in pos for p in self.ANSWERER_POSITIONS):
             return True
         if "大臣" in pos:

@@ -53,6 +53,9 @@ class KokkaiAPIClient:
         self._rate_limit()
         logger.info("GET %s", url)
         resp = req.get(url, timeout=30)
+        if resp.status_code == 400:
+            logger.warning("API 400 Bad Request: %s", url)
+            return {"numberOfRecords": "0", "numberOfReturn": "0"}
         resp.raise_for_status()
         return resp.json()
 
@@ -210,13 +213,13 @@ class KokkaiAPIClient:
                         text = text[len(name):].strip()
 
                     speeches.append(Speech(
-                        speech_id=sr.get("speechID", ""),
-                        speech_order=int(sr.get("speechOrder", 0)),
+                        speech_id=sr.get("speechID") or "",
+                        speech_order=int(sr.get("speechOrder") or 0),
                         speaker=name,
-                        speaker_yomi=sr.get("speakerYomi", ""),
-                        speaker_group=sr.get("speakerGroup", ""),
-                        speaker_position=sr.get("speakerPosition", ""),
-                        speaker_role=sr.get("speakerRole", ""),
+                        speaker_yomi=sr.get("speakerYomi") or "",
+                        speaker_group=sr.get("speakerGroup") or "",
+                        speaker_position=sr.get("speakerPosition") or "",
+                        speaker_role=sr.get("speakerRole") or "",
                         speech_text=text,
                     ))
                 except (TypeError, ValueError) as e:
