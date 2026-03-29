@@ -211,8 +211,9 @@ def score_meeting(client, extractor, evaluator, scorer, meeting, session, max_pa
         manager.update_from_qa_pairs(eval_pairs, session=session)
         result = scorer.create_daily_result(meeting, eval_pairs, manager.members)
 
-    # 結果JSON に個別QAデータ + セッション評価 + 議事全文を含める
+    # 結果JSON に個別QAデータ + セッション評価 + 議事全文 + バージョンを含める
     result_dict = result.to_dict()
+    result_dict["scoring_version"] = 2  # v1=旧軸, v2=DQI準拠+highlights+session
     result_dict["qa_pairs"] = _qa_pairs_to_dicts(eval_pairs)
     result_dict["session_blocks"] = session_data
     result_dict["speeches"] = [
@@ -255,6 +256,8 @@ def main():
                         help="既存結果を上書き")
     parser.add_argument("--backfill-speeches", action="store_true",
                         help="既存結果に議事全文だけ追加（API不使用）")
+    parser.add_argument("--upgrade", action="store_true",
+                        help="v1（旧軸）の結果のみv2で再評価（v2済みはスキップ）")
     args = parser.parse_args()
 
     client = KokkaiAPIClient()
@@ -293,9 +296,21 @@ def main():
                     _backfill_qa_pairs(out_file, m, extractor, evaluator)
                     continue
 
-                if out_file.exists() and not args.force:
-                    logger.info("  スキップ（既存）: %s", out_file.name)
-                    continue
+                if out_file.exists():
+                    if args.upgrade:
+                        # v2済みならスキップ、v1なら再評価
+                        try:
+                            with open(out_file, "r", encoding="utf-8") as _f:
+                                ver = json.load(_f).get("scoring_version", 1)
+                            if ver >= 2:
+                                logger.info("  スキップ（v2済み）: %s", out_file.name)
+                                continue
+                            logger.info("  v1→v2 アップグレード: %s", out_file.name)
+                        except (json.JSONDecodeError, OSError):
+                            pass
+                    elif not args.force:
+                        logger.info("  スキップ（既存）: %s", out_file.name)
+                        continue
 
                 score_meeting(client, extractor, evaluator, scorer,
                               m, session, args.max_pairs)
