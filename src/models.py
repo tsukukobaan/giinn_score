@@ -57,42 +57,69 @@ class Meeting:
 
 
 # ============================================================
+# テキストハイライト（スコア根拠の可視化）
+# ============================================================
+
+@dataclass
+class Highlight:
+    """発言テキスト中のスコア根拠箇所"""
+    text: str                       # 該当テキスト（部分文字列）
+    dimension: str                  # どの評価軸に関するか
+    sentiment: str = "positive"     # positive / negative
+    comment: str = ""               # 理由コメント
+
+
+# ============================================================
 # 質疑応答ペアとスコア
 # ============================================================
 
 @dataclass
 class QuestionScores:
     """質問品質スコア（各 0-100）"""
-    substantiveness: float = 0.0    # 本質性
-    specificity: float = 0.0        # 具体性
+    justification: float = 0.0      # 論拠の深さ（DQI最重要軸）
+    evidence: float = 0.0           # エビデンス品質
     constructiveness: float = 0.0   # 建設性
     novelty: float = 0.0            # 新規性
+    public_interest: float = 0.0    # 公益志向
     rationale: str = ""             # 評価理由
+    highlights: list[Highlight] = field(default_factory=list)
+
+    # 旧フィールド互換（読み込み時のフォールバック）
+    substantiveness: float = 0.0
+    specificity: float = 0.0
 
     @property
     def average(self) -> float:
+        j = self.justification or self.substantiveness  # 旧データ互換
+        e = self.evidence or self.specificity
         return round(
-            (self.substantiveness + self.specificity
-             + self.constructiveness + self.novelty) / 4, 1
+            (j + e + self.constructiveness
+             + self.novelty + self.public_interest) / 5, 1
         )
 
 
 @dataclass
 class AnswerScores:
     """答弁品質スコア（各 0-100）"""
-    directness: float = 0.0         # 直接性
-    specificity: float = 0.0        # 具体性
-    logical_coherence: float = 0.0  # 論理性
-    evasiveness: float = 0.0        # 回避度（高い=悪い）
+    responsiveness: float = 0.0     # 応答性（旧directness+evasiveness統合）
+    evidence: float = 0.0           # エビデンス品質
+    logical_coherence: float = 0.0  # 論理的一貫性
+    engagement: float = 0.0         # 対話姿勢
     rationale: str = ""
+    highlights: list[Highlight] = field(default_factory=list)
+
+    # 旧フィールド互換
+    directness: float = 0.0
+    specificity: float = 0.0
+    evasiveness: float = 0.0
 
     @property
     def average(self) -> float:
-        # evasivenessは逆転: 100-evasiveness で正規化
-        return round(
-            (self.directness + self.specificity
-             + self.logical_coherence + (100 - self.evasiveness)) / 4, 1
-        )
+        r = self.responsiveness or self.directness
+        e = self.evidence or self.specificity
+        lc = self.logical_coherence
+        eng = self.engagement or (100 - self.evasiveness if self.evasiveness else 0)
+        return round((r + e + lc + eng) / 4, 1)
 
 
 @dataclass
@@ -105,9 +132,9 @@ class QAPair:
     # AI評価スコア
     question_scores: QuestionScores = field(default_factory=QuestionScores)
     answer_scores: AnswerScores = field(default_factory=AnswerScores)
-    topic_relevance: float = 0.0        # 議題関連性 0-100
+    topic_relevance: float = 0.0
     is_duplicate: bool = False
-    duplicate_similarity: float = 0.0   # cosine類似度
+    duplicate_similarity: float = 0.0
     duplicate_of_speech_id: Optional[str] = None
 
     @property
@@ -117,6 +144,51 @@ class QAPair:
     @property
     def answer_quality(self) -> float:
         return self.answer_scores.average
+
+
+# ============================================================
+# 質疑ブロック（セッション単位評価）
+# ============================================================
+
+@dataclass
+class SessionScores:
+    """1人の議員の質疑時間全体の評価"""
+    argument_structure: float = 0.0     # 論点構成力
+    followup_quality: float = 0.0       # 掘り下げ力
+    time_efficiency: float = 0.0        # 時間効率
+    elicitation: float = 0.0            # 引き出し力
+    overall_impact: float = 0.0         # 全体的インパクト
+    rationale: str = ""
+    highlights: list[Highlight] = field(default_factory=list)
+
+    @property
+    def average(self) -> float:
+        return round(
+            (self.argument_structure + self.followup_quality
+             + self.time_efficiency + self.elicitation
+             + self.overall_impact) / 5, 1
+        )
+
+
+@dataclass
+class SessionBlock:
+    """1人の議員の質疑ブロック（割り当て時間内の全やり取り）"""
+    questioner: str
+    questioner_group: str
+    qa_pairs: list[QAPair] = field(default_factory=list)
+    session_scores: SessionScores = field(default_factory=SessionScores)
+
+    @property
+    def qa_average(self) -> float:
+        """個別QAペアの平均品質"""
+        if not self.qa_pairs:
+            return 0.0
+        return round(sum(p.question_quality for p in self.qa_pairs) / len(self.qa_pairs), 1)
+
+    @property
+    def combined_score(self) -> float:
+        """2層評価の統合スコア（Layer1*0.4 + Layer2*0.6）"""
+        return round(self.qa_average * 0.4 + self.session_scores.average * 0.6, 1)
 
 
 # ============================================================
@@ -231,12 +303,18 @@ class MemberScoreCard:
     party: str
     question_count: int = 0
     avg_question_quality: float = 0.0
+    avg_justification: float = 0.0      # 論拠の深さ
+    avg_evidence: float = 0.0           # エビデンス品質
+    avg_constructiveness: float = 0.0   # 建設性
+    avg_public_interest: float = 0.0    # 公益志向
+    topic_relevance_rate: float = 0.0   # %
+    duplicate_rate: float = 0.0         # %
+    answer_elicit_quality: float = 0.0  # 引き出した答弁の平均品質
+    session_score: float = 0.0          # セッション評価
+    overall_score: float = 0.0
+    # 旧フィールド互換
     avg_substantiveness: float = 0.0
     avg_specificity: float = 0.0
-    topic_relevance_rate: float = 0.0   # %
-    duplicate_rate: float = 0.0          # %
-    answer_elicit_quality: float = 0.0   # 引き出した答弁の平均品質
-    overall_score: float = 0.0
 
 
 @dataclass
@@ -261,9 +339,13 @@ class RespondentScoreCard:
     position: str
     answer_count: int = 0
     avg_answer_quality: float = 0.0
+    avg_responsiveness: float = 0.0
+    avg_evidence: float = 0.0
+    avg_engagement: float = 0.0
+    # 旧フィールド互換
     avg_directness: float = 0.0
     avg_specificity: float = 0.0
-    evasion_rate: float = 0.0       # 回避率 %
+    evasion_rate: float = 0.0
 
 
 @dataclass

@@ -15,21 +15,30 @@ from qa_extractor import QAPairExtractor
 from mock_data import generate_mock_meeting
 
 
-# テスト用のClaude APIレスポンス
+# テスト用のClaude APIレスポンス（新形式）
 MOCK_API_RESPONSE = json.dumps({
     "question_scores": {
-        "substantiveness": 85,
-        "specificity": 78,
+        "justification": 85,
+        "evidence": 78,
         "constructiveness": 72,
         "novelty": 80,
+        "public_interest": 75,
         "rationale": "エネルギー安全保障に関する具体的な数値を用いた質問",
+        "highlights": [
+            {"text": "石油備蓄の取り崩し計画", "dimension": "evidence",
+             "sentiment": "positive", "comment": "具体的政策を指定"},
+        ],
     },
     "answer_scores": {
-        "directness": 70,
-        "specificity": 65,
+        "responsiveness": 70,
+        "evidence": 65,
         "logical_coherence": 75,
-        "evasiveness": 30,
+        "engagement": 68,
         "rationale": "概ね質問に答えているが一部曖昧な表現あり",
+        "highlights": [
+            {"text": "約百四十五日分", "dimension": "evidence",
+             "sentiment": "positive", "comment": "具体的数値を提示"},
+        ],
     },
     "topic_relevance": 88,
 })
@@ -64,13 +73,15 @@ class TestEvaluate:
             evaluator = _make_evaluator(client, tmpdir)
             result = evaluator.evaluate(pairs[0])
 
-        assert result.question_scores.substantiveness == 85
-        assert result.question_scores.specificity == 78
+        assert result.question_scores.justification == 85
+        assert result.question_scores.evidence == 78
         assert result.question_scores.constructiveness == 72
         assert result.question_scores.novelty == 80
+        assert result.question_scores.public_interest == 75
         assert result.question_scores.average > 0
-        assert result.answer_scores.directness == 70
-        assert result.answer_scores.evasiveness == 30
+        assert len(result.question_scores.highlights) >= 1
+        assert result.answer_scores.responsiveness == 70
+        assert result.answer_scores.engagement == 68
         assert result.answer_scores.average > 0
         assert result.topic_relevance == 88
 
@@ -87,7 +98,7 @@ class TestEvaluate:
         assert len(results) == 3
         assert client.messages.create.call_count == 3
         for p in results:
-            assert p.question_scores.substantiveness == 85
+            assert p.question_scores.justification == 85
 
     def test_json_in_code_block(self):
         """```json ... ``` で囲まれたレスポンス"""
@@ -100,7 +111,7 @@ class TestEvaluate:
             evaluator = _make_evaluator(client, tmpdir)
             result = evaluator.evaluate(pairs[0])
 
-        assert result.question_scores.substantiveness == 85
+        assert result.question_scores.justification == 85
 
     def test_malformed_json(self):
         """不正なJSONでもクラッシュしない"""
@@ -214,12 +225,13 @@ class TestEvaluationCache:
 
             cache_data = {
                 "question_scores": {
-                    "substantiveness": 90, "specificity": 85,
-                    "constructiveness": 80, "novelty": 75, "rationale": "cached",
+                    "justification": 90, "evidence": 85,
+                    "constructiveness": 80, "novelty": 75,
+                    "public_interest": 70, "rationale": "cached",
                 },
                 "answer_scores": {
-                    "directness": 70, "specificity": 65,
-                    "logical_coherence": 60, "evasiveness": 25, "rationale": "cached",
+                    "responsiveness": 70, "evidence": 65,
+                    "logical_coherence": 60, "engagement": 55, "rationale": "cached",
                 },
                 "topic_relevance": 92,
             }
@@ -232,5 +244,5 @@ class TestEvaluationCache:
             result = evaluator.evaluate(pairs[0])
 
             client.messages.create.assert_not_called()
-            assert result.question_scores.substantiveness == 90
+            assert result.question_scores.justification == 90
             assert result.topic_relevance == 92
