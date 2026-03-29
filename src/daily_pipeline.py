@@ -149,10 +149,15 @@ class DailyPipeline:
 def main():
     """CLI エントリーポイント"""
     load_dotenv()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+
+    log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    handlers.append(logging.FileHandler(log_dir / "pipeline.log", encoding="utf-8"))
+
+    logging.basicConfig(level=logging.INFO, format=log_format, handlers=handlers)
 
     parser = argparse.ArgumentParser(description="国会審議スコアボード 日次バッチ")
     parser.add_argument("--date", default=date.today().isoformat(),

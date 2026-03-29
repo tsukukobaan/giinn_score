@@ -16,10 +16,14 @@ ENV/
 # Environment variables
 .env
 
-# Data cache
+# Data
 data/cache/
 data/images/
 data/results/
+data/masters/
+
+# Logs
+logs/
 
 # IDE
 .idea/

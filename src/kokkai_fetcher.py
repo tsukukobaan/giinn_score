@@ -181,34 +181,47 @@ class KokkaiAPIClient:
     # パース
     # ----------------------------------------------------------
 
+    REQUIRED_MEETING_FIELDS = ("issueID", "nameOfHouse", "nameOfMeeting", "date")
+
     def _parse_meetings(self, records: list[dict]) -> list[Meeting]:
         meetings = []
         for rec in records:
+            # 必須フィールドの検証
+            missing = [f for f in self.REQUIRED_MEETING_FIELDS if not rec.get(f)]
+            if missing:
+                logger.warning("会議レコードをスキップ（欠落: %s）: %s",
+                               missing, rec.get("issueID", "unknown"))
+                continue
+
             speech_records = rec.get("speechRecord", [])
             if isinstance(speech_records, dict):
                 speech_records = [speech_records]
 
             speeches = []
             for sr in speech_records:
-                text = sr.get("speech", "")
-                name = sr.get("speaker", "")
+                try:
+                    text = sr.get("speech", "")
+                    name = sr.get("speaker", "")
 
-                # 発言冒頭の「○氏名」除去
-                if text.startswith(f"○{name}"):
-                    text = text[len(f"○{name}"):].strip()
-                elif text.startswith(name):
-                    text = text[len(name):].strip()
+                    # 発言冒頭の「○氏名」除去
+                    if text.startswith(f"○{name}"):
+                        text = text[len(f"○{name}"):].strip()
+                    elif text.startswith(name):
+                        text = text[len(name):].strip()
 
-                speeches.append(Speech(
-                    speech_id=sr.get("speechID", ""),
-                    speech_order=int(sr.get("speechOrder", 0)),
-                    speaker=name,
-                    speaker_yomi=sr.get("speakerYomi", ""),
-                    speaker_group=sr.get("speakerGroup", ""),
-                    speaker_position=sr.get("speakerPosition", ""),
-                    speaker_role=sr.get("speakerRole", ""),
-                    speech_text=text,
-                ))
+                    speeches.append(Speech(
+                        speech_id=sr.get("speechID", ""),
+                        speech_order=int(sr.get("speechOrder", 0)),
+                        speaker=name,
+                        speaker_yomi=sr.get("speakerYomi", ""),
+                        speaker_group=sr.get("speakerGroup", ""),
+                        speaker_position=sr.get("speakerPosition", ""),
+                        speaker_role=sr.get("speakerRole", ""),
+                        speech_text=text,
+                    ))
+                except (TypeError, ValueError) as e:
+                    logger.warning("発言レコードをスキップ: %s", e)
+                    continue
 
             meetings.append(Meeting(
                 issue_id=rec.get("issueID", ""),

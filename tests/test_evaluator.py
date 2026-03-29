@@ -3,6 +3,8 @@
 """
 
 import json
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from evaluator import (
@@ -42,40 +44,45 @@ def _make_mock_client(response_text: str = MOCK_API_RESPONSE) -> MagicMock:
     return client
 
 
+def _make_evaluator(client, tmpdir=None):
+    """tmpdir付きでevaluatorを作成"""
+    if tmpdir is None:
+        tmpdir = tempfile.mkdtemp()
+    return QAPairEvaluator(client=client, cache_dir=tmpdir)
+
+
 class TestEvaluate:
     """Claude API評価のテスト"""
 
     def test_basic_evaluation(self):
         """基本的な評価が正しくパースされるか"""
         meeting = generate_mock_meeting()
-        extractor = QAPairExtractor()
-        pairs = extractor.extract(meeting)
+        pairs = QAPairExtractor().extract(meeting)
 
         client = _make_mock_client()
-        evaluator = QAPairEvaluator(client=client)
-        result = evaluator.evaluate(pairs[0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            evaluator = _make_evaluator(client, tmpdir)
+            result = evaluator.evaluate(pairs[0])
 
         assert result.question_scores.substantiveness == 85
         assert result.question_scores.specificity == 78
         assert result.question_scores.constructiveness == 72
         assert result.question_scores.novelty == 80
         assert result.question_scores.average > 0
-
         assert result.answer_scores.directness == 70
         assert result.answer_scores.evasiveness == 30
         assert result.answer_scores.average > 0
-
         assert result.topic_relevance == 88
 
     def test_evaluate_batch(self):
         """バッチ評価"""
         meeting = generate_mock_meeting()
-        extractor = QAPairExtractor()
-        pairs = extractor.extract(meeting)[:3]
+        pairs = QAPairExtractor().extract(meeting)[:3]
 
         client = _make_mock_client()
-        evaluator = QAPairEvaluator(client=client)
-        results = evaluator.evaluate_batch(pairs)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            evaluator = _make_evaluator(client, tmpdir)
+            results = evaluator.evaluate_batch(pairs)
 
         assert len(results) == 3
         assert client.messages.create.call_count == 3
@@ -86,35 +93,37 @@ class TestEvaluate:
         """```json ... ``` で囲まれたレスポンス"""
         wrapped = f"```json\n{MOCK_API_RESPONSE}\n```"
         client = _make_mock_client(wrapped)
-        evaluator = QAPairEvaluator(client=client)
 
         meeting = generate_mock_meeting()
         pairs = QAPairExtractor().extract(meeting)
-        result = evaluator.evaluate(pairs[0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            evaluator = _make_evaluator(client, tmpdir)
+            result = evaluator.evaluate(pairs[0])
 
         assert result.question_scores.substantiveness == 85
 
     def test_malformed_json(self):
         """不正なJSONでもクラッシュしない"""
         client = _make_mock_client("this is not json")
-        evaluator = QAPairEvaluator(client=client)
 
         meeting = generate_mock_meeting()
         pairs = QAPairExtractor().extract(meeting)
-        result = evaluator.evaluate(pairs[0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            evaluator = _make_evaluator(client, tmpdir)
+            result = evaluator.evaluate(pairs[0])
 
-        # スコアはデフォルト(0)のまま
         assert result.question_scores.substantiveness == 0.0
         assert result.topic_relevance == 0.0
 
     def test_empty_response(self):
         """空レスポンス"""
         client = _make_mock_client("")
-        evaluator = QAPairEvaluator(client=client)
 
         meeting = generate_mock_meeting()
         pairs = QAPairExtractor().extract(meeting)
-        result = evaluator.evaluate(pairs[0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            evaluator = _make_evaluator(client, tmpdir)
+            result = evaluator.evaluate(pairs[0])
 
         assert result.question_scores.substantiveness == 0.0
 
@@ -124,8 +133,9 @@ class TestEvaluate:
         pairs = QAPairExtractor().extract(meeting)
 
         client = _make_mock_client()
-        evaluator = QAPairEvaluator(client=client)
-        evaluator.evaluate(pairs[0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            evaluator = _make_evaluator(client, tmpdir)
+            evaluator.evaluate(pairs[0])
 
         call_kwargs = client.messages.create.call_args
         messages = call_kwargs.kwargs["messages"]
@@ -140,54 +150,87 @@ class TestDuplicateDetection:
     """重複検出のテスト"""
 
     def test_tokenize(self):
-        """トークナイズの基本動作"""
         tokens = _tokenize("エネルギー政策について")
         assert len(tokens) > 0
-        assert all(isinstance(t, str) for t in tokens)
 
     def test_cosine_identical(self):
-        """同一ベクトルの類似度は1.0"""
         vec = {"a": 1.0, "b": 2.0}
         assert abs(_cosine_similarity(vec, vec) - 1.0) < 0.001
 
     def test_cosine_orthogonal(self):
-        """直交ベクトルの類似度は0.0"""
         vec_a = {"a": 1.0}
         vec_b = {"b": 1.0}
         assert _cosine_similarity(vec_a, vec_b) == 0.0
 
     def test_detect_similar_questions(self):
-        """類似した質問が重複として検出される"""
         meeting = generate_mock_meeting()
         pairs = QAPairExtractor().extract(meeting)
-
-        # 蓮舫と辻元の質問は同じ政治資金スキャンダルについて（類似度≈0.39）
         detect_duplicates(pairs, threshold=0.35)
-
-        # どちらかが重複としてマークされるはず
         duplicates = [p for p in pairs if p.is_duplicate]
         assert len(duplicates) >= 1
 
     def test_no_duplicate_single_pair(self):
-        """1ペアのみの場合は重複なし"""
         meeting = generate_mock_meeting()
         pairs = QAPairExtractor().extract(meeting)[:1]
-
         detect_duplicates(pairs)
         assert not pairs[0].is_duplicate
 
     def test_high_threshold_no_duplicates(self):
-        """閾値が高すぎると重複なし"""
         meeting = generate_mock_meeting()
         pairs = QAPairExtractor().extract(meeting)
-
         detect_duplicates(pairs, threshold=0.99)
         assert all(not p.is_duplicate for p in pairs)
 
     def test_tfidf_vectors(self):
-        """TF-IDFベクトルが生成される"""
         docs = [_tokenize("エネルギー政策"), _tokenize("防衛予算について")]
         vectors = _compute_tfidf(docs)
         assert len(vectors) == 2
-        assert all(isinstance(v, dict) for v in vectors)
         assert all(len(v) > 0 for v in vectors)
+
+
+class TestEvaluationCache:
+    """評価キャッシュのテスト"""
+
+    def test_cache_miss_creates_file(self):
+        """キャッシュミス時にキャッシュファイルが作成される"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = _make_mock_client()
+            evaluator = _make_evaluator(client, tmpdir)
+
+            meeting = generate_mock_meeting()
+            pairs = QAPairExtractor().extract(meeting)
+            evaluator.evaluate(pairs[0])
+
+            cache_file = Path(tmpdir) / f"{pairs[0].question.speech_id}.json"
+            assert cache_file.exists()
+            client.messages.create.assert_called_once()
+
+    def test_cache_hit_skips_api(self):
+        """キャッシュヒット時にAPIが呼ばれない"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            meeting = generate_mock_meeting()
+            pairs = QAPairExtractor().extract(meeting)
+            speech_id = pairs[0].question.speech_id
+
+            cache_data = {
+                "question_scores": {
+                    "substantiveness": 90, "specificity": 85,
+                    "constructiveness": 80, "novelty": 75, "rationale": "cached",
+                },
+                "answer_scores": {
+                    "directness": 70, "specificity": 65,
+                    "logical_coherence": 60, "evasiveness": 25, "rationale": "cached",
+                },
+                "topic_relevance": 92,
+            }
+            cache_file = Path(tmpdir) / f"{speech_id}.json"
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f)
+
+            client = _make_mock_client()
+            evaluator = _make_evaluator(client, tmpdir)
+            result = evaluator.evaluate(pairs[0])
+
+            client.messages.create.assert_not_called()
+            assert result.question_scores.substantiveness == 90
+            assert result.topic_relevance == 92

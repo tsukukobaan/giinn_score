@@ -232,6 +232,40 @@ class TestCheckNewMeetings:
             assert result[0]["meeting"] == "予算委員会"
 
 
+class TestMalformedData:
+    """不正データのバリデーションテスト"""
+
+    def test_malformed_meeting_skipped(self):
+        """必須フィールド欠落の会議レコードはスキップされる"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = KokkaiAPIClient(cache_dir=tmpdir)
+
+            records = [
+                {"session": 215},  # issueID, nameOfHouse等が欠落
+                SAMPLE_MEETING_RECORD,  # 正常レコード
+            ]
+            meetings = client._parse_meetings(records)
+            assert len(meetings) == 1
+            assert meetings[0].date == "2026-03-10"
+
+    def test_malformed_speech_skipped(self):
+        """不正な発言レコードがあっても会議は解析される"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = KokkaiAPIClient(cache_dir=tmpdir)
+
+            record = {
+                **SAMPLE_MEETING_RECORD,
+                "speechRecord": [
+                    {"speechOrder": "not_a_number"},  # intに変換できない
+                    SAMPLE_MEETING_RECORD["speechRecord"][1],  # 正常
+                ],
+            }
+            meetings = client._parse_meetings([record])
+            assert len(meetings) == 1
+            # 不正な発言はスキップされ、正常な発言のみ
+            assert len(meetings[0].speeches) == 1
+
+
 class TestRateLimit:
     """レート制限のテスト"""
 

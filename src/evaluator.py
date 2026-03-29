@@ -10,6 +10,7 @@ import logging
 import math
 import time
 from collections import Counter
+from pathlib import Path
 from typing import Optional
 
 import anthropic
@@ -79,11 +80,90 @@ USER_PROMPT_TEMPLATE = """\
 class QAPairEvaluator:
     """Claude APIを使って質疑応答ペアを評価"""
 
-    def __init__(self, client: Optional[anthropic.Anthropic] = None):
+    def __init__(
+        self,
+        client: Optional[anthropic.Anthropic] = None,
+        cache_dir: str = "./data/cache/eval",
+    ):
         self.client = client or anthropic.Anthropic()
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _cache_path(self, speech_id: str) -> Path:
+        safe_id = speech_id.replace("/", "_")
+        return self.cache_dir / f"{safe_id}.json"
+
+    def _load_cache(self, qa_pair: QAPair) -> bool:
+        """キャッシュから評価結果を読み込む。成功時True"""
+        cache_file = self._cache_path(qa_pair.question.speech_id)
+        if not cache_file.exists():
+            return False
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            scores = self._parse_cached(data)
+            if scores:
+                qa_pair.question_scores = scores["question_scores"]
+                qa_pair.answer_scores = scores["answer_scores"]
+                qa_pair.topic_relevance = scores["topic_relevance"]
+                logger.info("Cache hit: %s", qa_pair.question.speech_id)
+                return True
+        except (json.JSONDecodeError, KeyError):
+            pass
+        return False
+
+    def _save_cache(self, qa_pair: QAPair) -> None:
+        cache_file = self._cache_path(qa_pair.question.speech_id)
+        data = {
+            "question_scores": {
+                "substantiveness": qa_pair.question_scores.substantiveness,
+                "specificity": qa_pair.question_scores.specificity,
+                "constructiveness": qa_pair.question_scores.constructiveness,
+                "novelty": qa_pair.question_scores.novelty,
+                "rationale": qa_pair.question_scores.rationale,
+            },
+            "answer_scores": {
+                "directness": qa_pair.answer_scores.directness,
+                "specificity": qa_pair.answer_scores.specificity,
+                "logical_coherence": qa_pair.answer_scores.logical_coherence,
+                "evasiveness": qa_pair.answer_scores.evasiveness,
+                "rationale": qa_pair.answer_scores.rationale,
+            },
+            "topic_relevance": qa_pair.topic_relevance,
+        }
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _parse_cached(self, data: dict) -> Optional[dict]:
+        """キャッシュJSONをスコアオブジェクトに変換"""
+        try:
+            qs = data["question_scores"]
+            ans = data["answer_scores"]
+            return {
+                "question_scores": QuestionScores(
+                    substantiveness=float(qs["substantiveness"]),
+                    specificity=float(qs["specificity"]),
+                    constructiveness=float(qs["constructiveness"]),
+                    novelty=float(qs["novelty"]),
+                    rationale=str(qs.get("rationale", "")),
+                ),
+                "answer_scores": AnswerScores(
+                    directness=float(ans["directness"]),
+                    specificity=float(ans["specificity"]),
+                    logical_coherence=float(ans["logical_coherence"]),
+                    evasiveness=float(ans["evasiveness"]),
+                    rationale=str(ans.get("rationale", "")),
+                ),
+                "topic_relevance": float(data["topic_relevance"]),
+            }
+        except (KeyError, TypeError, ValueError):
+            return None
 
     def evaluate(self, qa_pair: QAPair) -> QAPair:
         """1つのQAPairを評価してスコアを付与"""
+        if self._load_cache(qa_pair):
+            return qa_pair
+
         user_prompt = USER_PROMPT_TEMPLATE.format(
             house=qa_pair.meeting.name_of_house,
             committee=qa_pair.meeting.name_of_meeting,
@@ -104,6 +184,7 @@ class QAPairEvaluator:
             qa_pair.question_scores = scores["question_scores"]
             qa_pair.answer_scores = scores["answer_scores"]
             qa_pair.topic_relevance = scores["topic_relevance"]
+            self._save_cache(qa_pair)
             logger.info(
                 "評価完了: %s → Q:%.1f A:%.1f R:%.0f",
                 qa_pair.question.speaker,
