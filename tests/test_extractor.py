@@ -2,16 +2,11 @@
 テスト: QAPairExtractor + MasterManager
 """
 
-import sys
 import tempfile
-from pathlib import Path
-
-# src/ を import path に追加
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from models import QAPair
 from qa_extractor import QAPairExtractor, MasterManager
-from tests.mock_data import generate_mock_meeting
+from mock_data import generate_mock_meeting
 
 
 def test_qa_extraction():

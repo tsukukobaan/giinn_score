@@ -5,7 +5,7 @@
 サンプル議事録データ。参議院予算委員会を想定。
 """
 
-from src.models import Speech, Meeting
+from models import Speech, Meeting
 
 
 def generate_mock_meeting() -> Meeting:

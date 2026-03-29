@@ -66,7 +66,6 @@ class QAPairExtractor:
                             question=sp, answer=nxt, meeting=meeting,
                         ))
                     break
-                    j += 1
             i += 1
 
         logger.info(
@@ -235,7 +234,9 @@ class MasterManager:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    from tests.mock_data import generate_mock_meeting
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent / "tests"))
+    from mock_data import generate_mock_meeting
 
     meeting = generate_mock_meeting()
     extractor = QAPairExtractor()
