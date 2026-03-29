@@ -1,4 +1,4 @@
-# CLAUDE.md — 国会審議スコアボード (kokkai-scorer)
+# CLAUDE.md — GiinScore（国会審議スコアボード）
 
 ## プロジェクト概要
 
@@ -6,8 +6,7 @@
 衆参両院・全委員会の議事録を取得・構造化し、質疑応答の品質をClaude APIで評価する。
 日次で自動実行し、スコアカード画像を生成してXアカウントから自動投稿する。
 
-**運営主体**: NXJI × MorpheusAI
-**プロダクト名**: 国会審議スコアボード / kokkai-score.jp
+**プロダクト名**: GiinScore
 
 ---
 

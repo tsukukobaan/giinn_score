@@ -24,7 +24,7 @@ from models import Speech, Meeting
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://kokkai.ndl.go.jp/api"
-MAX_RECORDS = 100
+MAX_RECORDS = 10
 INTERVAL_SEC = 1.5
 
 
@@ -48,13 +48,13 @@ class KokkaiAPIClient:
 
         params.setdefault("recordPacking", "json")
         params.setdefault("maximumRecords", MAX_RECORDS)
-        url = f"{BASE_URL}/{endpoint}?{urlencode(params)}"
+        url = f"{BASE_URL}/{endpoint}"
 
         self._rate_limit()
-        logger.info("GET %s", url)
-        resp = req.get(url, timeout=30)
+        logger.info("GET %s params=%s", url, params)
+        resp = req.get(url, params=params, timeout=30)
         if resp.status_code == 400:
-            logger.warning("API 400 Bad Request: %s", url)
+            logger.warning("API 400 Bad Request: %s", resp.url)
             return {"numberOfRecords": "0", "numberOfReturn": "0"}
         resp.raise_for_status()
         return resp.json()
@@ -107,15 +107,16 @@ class KokkaiAPIClient:
 
         # ページネーションで全件取得
         all_records: list[dict] = []
-        start = 1
+        start = None
 
         while True:
-            params["startRecord"] = start
+            if start is not None:
+                params["startRecord"] = start
             data = self._fetch_json("meeting", params)
 
             total = int(data.get("numberOfRecords", 0))
             returned = int(data.get("numberOfReturn", 0))
-            logger.info("取得 %d件 / 全%d件 (start=%d)", returned, total, start)
+            logger.info("取得 %d件 / 全%d件 (start=%s)", returned, total, start)
 
             if returned == 0:
                 break
