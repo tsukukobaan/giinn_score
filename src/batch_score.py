@@ -119,9 +119,20 @@ def score_meeting(client, extractor, evaluator, scorer, meeting, session, max_pa
         manager.update_from_qa_pairs(eval_pairs, session=session)
         result = scorer.create_daily_result(meeting, eval_pairs, manager.members)
 
-    # 結果JSON に個別QAデータも含める
+    # 結果JSON に個別QAデータ + 議事全文を含める
     result_dict = result.to_dict()
     result_dict["qa_pairs"] = _qa_pairs_to_dicts(eval_pairs)
+    result_dict["speeches"] = [
+        {
+            "order": s.speech_order,
+            "speaker": s.speaker,
+            "speaker_group": s.speaker_group,
+            "speaker_position": s.speaker_position or "",
+            "speaker_role": s.speaker_role or "",
+            "text": s.speech_text,
+        }
+        for s in sorted(meeting.speeches, key=lambda s: s.speech_order)
+    ]
 
     out = Path("data/results")
     out.mkdir(parents=True, exist_ok=True)
@@ -147,6 +158,8 @@ def main():
                         help="会議あたりの最大評価ペア数 (0=全件)")
     parser.add_argument("--meeting", default=None,
                         help="対象委員会名 (省略=全委員会)")
+    parser.add_argument("--force", action="store_true",
+                        help="既存結果を上書き")
     args = parser.parse_args()
 
     client = KokkaiAPIClient()
@@ -179,7 +192,7 @@ def main():
 
                 safe_name = m.name_of_meeting.replace("/", "_")
                 out_file = Path("data/results") / f"{m.date}_{house}_{safe_name}.json"
-                if out_file.exists():
+                if out_file.exists() and not args.force:
                     logger.info("  スキップ（既存）: %s", out_file.name)
                     continue
 

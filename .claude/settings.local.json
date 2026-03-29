@@ -9,7 +9,9 @@
       "WebFetch(domain:online.sangiin.go.jp)",
       "WebFetch(domain:www.shugiintv.go.jp)",
       "Bash(curl -s http://localhost:8081/)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(python -m ruff check src/ tests/)",
+      "Bash(python -m pytest tests/ -q)"
     ]
   }
 }

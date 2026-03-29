@@ -197,6 +197,8 @@ def _render_detail(data: dict) -> str:
         </tr>"""
 
     house = data.get("house", "")
+    has_speeches = bool(data.get("speeches"))
+    transcript_link = f'<a href="/transcript?file={fname}" class="btn">議事全文を見る</a>' if has_speeches else ""
     return _page(f"{data['date']} {house} {data.get('meeting_name','')}", f"""
     <a href="/" class="back">&larr; 一覧に戻る</a>
     <h1>{data['date']} {house} {data.get('meeting_name','')}</h1>
@@ -205,6 +207,7 @@ def _render_detail(data: dict) -> str:
         <div class="stat"><div class="stat-val">{data.get('topic_relevance_rate',0):.0f}%</div><div class="stat-label">議題関連率</div></div>
         <div class="stat"><div class="stat-val">{data.get('duplicate_rate',0):.0f}%</div><div class="stat-label">重複率</div></div>
         <div class="stat"><div class="stat-val">{data.get('constructive_rate',0):.0f}%</div><div class="stat-label">建設率</div></div>
+        <div class="stat">{transcript_link}</div>
     </div>
     <h2>政党ランキング</h2>
     <table>
@@ -264,7 +267,7 @@ def _render_member(data: dict, member_name: str) -> str:
                 </div>
                 <div class="qa-section">
                     <div class="qa-label">質問 — {qa.get("questioner","")}</div>
-                    <div class="qa-text">{qa.get("question_text","")[:500]}{"..." if len(qa.get("question_text","")) > 500 else ""}</div>
+                    <div class="qa-text">{qa.get("question_text","")}</div>
                     <div class="qa-scores">
                         本質性 {_score_bar(qs.get("substantiveness",0))}
                         具体性 {_score_bar(qs.get("specificity",0))}
@@ -275,7 +278,7 @@ def _render_member(data: dict, member_name: str) -> str:
                 </div>
                 <div class="qa-section answer">
                     <div class="qa-label">答弁 — {qa.get("answerer","")}（{qa.get("answerer_position","")}）</div>
-                    <div class="qa-text">{qa.get("answer_text","")[:500]}{"..." if len(qa.get("answer_text","")) > 500 else ""}</div>
+                    <div class="qa-text">{qa.get("answer_text","")}</div>
                     <div class="qa-scores">
                         直接性 {_score_bar(ans.get("directness",0))}
                         具体性 {_score_bar(ans.get("specificity",0))}
@@ -301,6 +304,49 @@ def _render_member(data: dict, member_name: str) -> str:
     </div>
     <h2>個別質疑の評価</h2>
     {qa_html}
+    """)
+
+
+# ============================================================
+# 議事全文
+# ============================================================
+
+def _render_transcript(data: dict) -> str:
+    fname = data.get("_file", "")
+    speeches = data.get("speeches", [])
+
+    if not speeches:
+        return _page("議事全文", f'''
+        <a href="/detail?file={fname}" class="back">&larr; 戻る</a>
+        <h1>議事全文</h1>
+        <p class="small">全文データが含まれていません。<code>--force</code> でバッチを再実行してください。</p>
+        ''')
+
+    house = data.get("house", "")
+    speech_html = ""
+    for s in speeches:
+        pos = s.get("speaker_position", "")
+        role = s.get("speaker_role", "")
+        label = pos or role or ""
+        group = s.get("speaker_group", "")
+        color = _party_color(group.split("・")[0]) if group else "#5a6a7a"
+
+        speech_html += f'''
+        <div class="speech">
+            <div class="speech-header">
+                <span class="speech-num">#{s.get("order","")}</span>
+                <strong>{s.get("speaker","")}</strong>
+                {"<span class='small'>（" + label + "）</span>" if label else ""}
+                {"<span class='party-dot' style='background:" + color + "'></span><span class='small'>" + group + "</span>" if group else ""}
+            </div>
+            <div class="speech-text">{s.get("text","")}</div>
+        </div>'''
+
+    return _page(f"議事全文 — {data['date']} {house} {data.get('meeting_name','')}", f"""
+    <a href="/detail?file={fname}" class="back">&larr; スコアに戻る</a>
+    <h1>{data['date']} {house} {data.get('meeting_name','')}</h1>
+    <p class="sub">議事全文 — {len(speeches)}発言</p>
+    {speech_html}
     """)
 
 
@@ -564,6 +610,12 @@ a.perf-card:hover {{ background:#243040; }}
 .qa-scores {{ display:flex; gap:16px; flex-wrap:wrap; font-size:0.8rem; margin-bottom:6px; }}
 .qa-rationale {{ font-size:0.8rem; color:#64ffda; font-style:italic; }}
 .small {{ font-size:0.8rem; color:#8892b0; }}
+.btn {{ display:inline-block; padding:8px 16px; background:#64ffda; color:#0f1923; border-radius:6px; text-decoration:none; font-weight:600; font-size:0.85rem; }}
+.btn:hover {{ background:#52e0c4; }}
+.speech {{ margin-bottom:16px; padding:12px 16px; background:#1a2332; border-radius:6px; border-left:3px solid #2a3a4a; }}
+.speech-header {{ margin-bottom:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+.speech-num {{ color:#5a6a7a; font-size:0.75rem; }}
+.speech-text {{ font-size:0.85rem; line-height:1.7; color:#c0c0c0; white-space:pre-wrap; word-break:break-all; }}
 </style>
 </head><body>{body}
 <footer style="margin-top:48px;padding-top:16px;border-top:1px solid #1a2a3a;color:#5a6a7a;font-size:0.75rem;">
@@ -590,6 +642,10 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/detail":
             html = self._load_and_render(qs, _render_detail)
+            self._respond(200 if html else 404, html or _page("Not Found", "<h1>Not Found</h1>"))
+
+        elif path == "/transcript":
+            html = self._load_and_render(qs, _render_transcript)
             self._respond(200 if html else 404, html or _page("Not Found", "<h1>Not Found</h1>"))
 
         elif path == "/member":
