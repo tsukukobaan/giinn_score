@@ -39,8 +39,12 @@ class ScoreAggregator:
             party = member.current_party() if member else "不明"
 
             avg_q = sum(p.question_quality for p in member_pairs) / n
-            avg_sub = sum(p.question_scores.substantiveness for p in member_pairs) / n
-            avg_spec = sum(p.question_scores.specificity for p in member_pairs) / n
+            avg_just = sum(p.question_scores.justification or p.question_scores.substantiveness
+                           for p in member_pairs) / n
+            avg_ev = sum(p.question_scores.evidence or p.question_scores.specificity
+                         for p in member_pairs) / n
+            avg_con = sum(p.question_scores.constructiveness for p in member_pairs) / n
+            avg_pi = sum(p.question_scores.public_interest for p in member_pairs) / n
             relevance_rate = sum(
                 1 for p in member_pairs if p.topic_relevance >= TOPIC_RELEVANCE_THRESHOLD
             ) / n * 100
@@ -55,12 +59,17 @@ class ScoreAggregator:
                 party=party,
                 question_count=n,
                 avg_question_quality=round(avg_q, 1),
-                avg_substantiveness=round(avg_sub, 1),
-                avg_specificity=round(avg_spec, 1),
+                avg_justification=round(avg_just, 1),
+                avg_evidence=round(avg_ev, 1),
+                avg_constructiveness=round(avg_con, 1),
+                avg_public_interest=round(avg_pi, 1),
                 topic_relevance_rate=round(relevance_rate, 1),
                 duplicate_rate=round(dup_rate, 1),
                 answer_elicit_quality=round(avg_answer, 1),
                 overall_score=round(overall, 1),
+                # 旧互換
+                avg_substantiveness=round(avg_just, 1),
+                avg_specificity=round(avg_ev, 1),
             ))
 
         cards.sort(key=lambda c: c.overall_score, reverse=True)
@@ -133,11 +142,15 @@ class ScoreAggregator:
         cards = []
         for name, resp_pairs in by_resp.items():
             n = len(resp_pairs)
-            position = resp_pairs[0].answer.speaker_position
+            position = resp_pairs[0].answer.speaker_position or ""
 
             avg_a = sum(p.answer_quality for p in resp_pairs) / n
-            avg_dir = sum(p.answer_scores.directness for p in resp_pairs) / n
-            avg_spec = sum(p.answer_scores.specificity for p in resp_pairs) / n
+            avg_resp = sum(p.answer_scores.responsiveness or p.answer_scores.directness
+                           for p in resp_pairs) / n
+            avg_ev = sum(p.answer_scores.evidence or p.answer_scores.specificity
+                         for p in resp_pairs) / n
+            avg_eng = sum(p.answer_scores.engagement for p in resp_pairs) / n
+            # 旧互換: evasion_rate
             evasion_rate = sum(
                 1 for p in resp_pairs
                 if p.answer_scores.evasiveness >= EVASION_THRESHOLD
@@ -148,8 +161,11 @@ class ScoreAggregator:
                 position=position,
                 answer_count=n,
                 avg_answer_quality=round(avg_a, 1),
-                avg_directness=round(avg_dir, 1),
-                avg_specificity=round(avg_spec, 1),
+                avg_responsiveness=round(avg_resp, 1),
+                avg_evidence=round(avg_ev, 1),
+                avg_engagement=round(avg_eng, 1),
+                avg_directness=round(avg_resp, 1),
+                avg_specificity=round(avg_ev, 1),
                 evasion_rate=round(evasion_rate, 1),
             ))
 

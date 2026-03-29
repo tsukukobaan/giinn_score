@@ -67,10 +67,17 @@ def _discover_committees(client: KokkaiAPIClient, session: int) -> list[tuple[st
     return result
 
 
+def _highlight_to_dict(h) -> dict:
+    return {"text": h.text, "dimension": h.dimension,
+            "sentiment": h.sentiment, "comment": h.comment}
+
+
 def _qa_pairs_to_dicts(pairs) -> list[dict]:
     """QAPairリストを個別評価付きのdictリストに変換"""
     items = []
     for p in pairs:
+        qs = p.question_scores
+        ans = p.answer_scores
         items.append({
             "questioner": p.question.speaker,
             "questioner_group": p.question.speaker_group,
@@ -79,20 +86,23 @@ def _qa_pairs_to_dicts(pairs) -> list[dict]:
             "answerer_position": p.answer.speaker_position or "",
             "answer_text": p.answer.speech_text,
             "question_scores": {
-                "substantiveness": p.question_scores.substantiveness,
-                "specificity": p.question_scores.specificity,
-                "constructiveness": p.question_scores.constructiveness,
-                "novelty": p.question_scores.novelty,
-                "average": p.question_scores.average,
-                "rationale": p.question_scores.rationale,
+                "justification": qs.justification,
+                "evidence": qs.evidence,
+                "constructiveness": qs.constructiveness,
+                "novelty": qs.novelty,
+                "public_interest": qs.public_interest,
+                "average": qs.average,
+                "rationale": qs.rationale,
+                "highlights": [_highlight_to_dict(h) for h in qs.highlights],
             },
             "answer_scores": {
-                "directness": p.answer_scores.directness,
-                "specificity": p.answer_scores.specificity,
-                "logical_coherence": p.answer_scores.logical_coherence,
-                "evasiveness": p.answer_scores.evasiveness,
-                "average": p.answer_scores.average,
-                "rationale": p.answer_scores.rationale,
+                "responsiveness": ans.responsiveness,
+                "evidence": ans.evidence,
+                "logical_coherence": ans.logical_coherence,
+                "engagement": ans.engagement,
+                "average": ans.average,
+                "rationale": ans.rationale,
+                "highlights": [_highlight_to_dict(h) for h in ans.highlights],
             },
             "topic_relevance": p.topic_relevance,
             "is_duplicate": p.is_duplicate,
@@ -173,14 +183,38 @@ def score_meeting(client, extractor, evaluator, scorer, meeting, session, max_pa
     evaluator.evaluate_batch(eval_pairs)
     detect_duplicates(eval_pairs)
 
+    # セッション（質疑ブロック）評価
+    session_blocks = extractor.extract_sessions(eval_pairs)
+    session_data = []
+    for sb in session_blocks:
+        if len(sb.qa_pairs) >= 2:  # 2ペア以上のブロックのみ評価
+            evaluator.evaluate_session(sb)
+        session_data.append({
+            "questioner": sb.questioner,
+            "questioner_group": sb.questioner_group,
+            "qa_count": len(sb.qa_pairs),
+            "qa_average": sb.qa_average,
+            "session_scores": {
+                "argument_structure": sb.session_scores.argument_structure,
+                "followup_quality": sb.session_scores.followup_quality,
+                "time_efficiency": sb.session_scores.time_efficiency,
+                "elicitation": sb.session_scores.elicitation,
+                "overall_impact": sb.session_scores.overall_impact,
+                "average": sb.session_scores.average,
+                "rationale": sb.session_scores.rationale,
+            },
+            "combined_score": sb.combined_score,
+        })
+
     with tempfile.TemporaryDirectory() as tmpdir:
         manager = MasterManager(data_dir=tmpdir)
         manager.update_from_qa_pairs(eval_pairs, session=session)
         result = scorer.create_daily_result(meeting, eval_pairs, manager.members)
 
-    # 結果JSON に個別QAデータ + 議事全文を含める
+    # 結果JSON に個別QAデータ + セッション評価 + 議事全文を含める
     result_dict = result.to_dict()
     result_dict["qa_pairs"] = _qa_pairs_to_dicts(eval_pairs)
+    result_dict["session_blocks"] = session_data
     result_dict["speeches"] = [
         {
             "order": s.speech_order,

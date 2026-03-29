@@ -4,7 +4,7 @@
 
 import logging
 
-from models import Speech, Meeting, QAPair
+from models import Speech, Meeting, QAPair, SessionBlock
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,38 @@ class QAPairExtractor:
 
     def _is_questioner(self, sp: Speech) -> bool:
         return not self._is_answerer(sp) and not self._is_chair(sp)
+
+    def extract_sessions(self, pairs: list[QAPair]) -> list[SessionBlock]:
+        """QAペアを同一質問者の連続ブロックにグルーピング"""
+        if not pairs:
+            return []
+
+        sessions: list[SessionBlock] = []
+        current_name = pairs[0].question.speaker
+        current_group = pairs[0].question.speaker_group
+        current_pairs: list[QAPair] = [pairs[0]]
+
+        for p in pairs[1:]:
+            if p.question.speaker == current_name:
+                current_pairs.append(p)
+            else:
+                sessions.append(SessionBlock(
+                    questioner=current_name,
+                    questioner_group=current_group,
+                    qa_pairs=current_pairs,
+                ))
+                current_name = p.question.speaker
+                current_group = p.question.speaker_group
+                current_pairs = [p]
+
+        sessions.append(SessionBlock(
+            questioner=current_name,
+            questioner_group=current_group,
+            qa_pairs=current_pairs,
+        ))
+
+        logger.info("セッション分割: %dペア → %dブロック", len(pairs), len(sessions))
+        return sessions
 
     def _is_procedural(self, sp: Speech) -> bool:
         head = sp.speech_text[:100]
