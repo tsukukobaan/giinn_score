@@ -52,7 +52,7 @@ def _party_color(party: str) -> str:
 def _score_bar(score: float, max_val: float = 100) -> str:
     pct = min(score / max_val * 100, 100) if max_val else 0
     color = "#27ae60" if score >= 70 else "#f39c12" if score >= 50 else "#e74c3c"
-    return f'<div class="bar"><div class="fill" style="width:{pct:.0f}%;background:{color}"></div><span>{score:.1f}</span></div>'
+    return f'<div class="bar"><div class="fill-bg"><div class="fill" style="width:{pct:.0f}%;background:{color}"></div></div><span>{score:.1f}</span></div>'
 
 
 def _score_badge(score: float) -> str:
@@ -585,7 +585,8 @@ tr:hover {{ background:#1a2a3a; cursor:pointer; }}
 .badge.san {{ background:#2980b9; }}
 .party-dot {{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; }}
 .bar {{ display:inline-flex; align-items:center; gap:6px; }}
-.bar .fill {{ height:7px; border-radius:4px; min-width:2px; width:60px; }}
+.bar .fill-bg {{ width:80px; height:7px; border-radius:4px; background:#1a2a3a; }}
+.bar .fill {{ height:100%; border-radius:4px; min-width:2px; }}
 .bar span {{ font-size:0.8rem; min-width:30px; text-align:right; font-variant-numeric:tabular-nums; }}
 .tabs {{ display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }}
 .tab {{ padding:6px 14px; border-radius:20px; text-decoration:none; color:#8892b0; background:#1a2332; font-size:0.85rem; }}
