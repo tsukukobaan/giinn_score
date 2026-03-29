@@ -274,6 +274,7 @@ class DailyResult:
     house: str
     meeting_name: str
     total_qa_pairs: int
+    session: int = 0
     member_scores: list[MemberScoreCard] = field(default_factory=list)
     party_scores: list[PartyScoreCard] = field(default_factory=list)
     respondent_scores: list[RespondentScoreCard] = field(default_factory=list)

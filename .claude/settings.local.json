@@ -3,7 +3,11 @@
     "allow": [
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "WebFetch(domain:www.shugiin.go.jp)",
+      "WebFetch(domain:kokkai.ndl.go.jp)",
+      "WebFetch(domain:online.sangiin.go.jp)",
+      "WebFetch(domain:www.shugiintv.go.jp)"
     ]
   }
 }

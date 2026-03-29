@@ -182,6 +182,7 @@ class ScoreAggregator:
             house=meeting.name_of_house,
             meeting_name=meeting.name_of_meeting,
             total_qa_pairs=len(pairs),
+            session=meeting.session,
             member_scores=member_scores,
             party_scores=party_scores,
             respondent_scores=respondent_scores,
