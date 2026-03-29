@@ -100,6 +100,36 @@ def _qa_pairs_to_dicts(pairs) -> list[dict]:
     return items
 
 
+def _backfill_speeches(out_file: Path, meeting) -> None:
+    """既存結果JSONに議事全文だけ追加（API不使用）"""
+    if not out_file.exists():
+        logger.info("  スキップ（結果なし）: %s", out_file.name)
+        return
+
+    with open(out_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if data.get("speeches"):
+        logger.info("  スキップ（全文あり）: %s", out_file.name)
+        return
+
+    data["speeches"] = [
+        {
+            "order": s.speech_order,
+            "speaker": s.speaker,
+            "speaker_group": s.speaker_group,
+            "speaker_position": s.speaker_position or "",
+            "speaker_role": s.speaker_role or "",
+            "text": s.speech_text,
+        }
+        for s in sorted(meeting.speeches, key=lambda s: s.speech_order)
+    ]
+
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    logger.info("  全文追加: %s (%d発言)", out_file.name, len(data["speeches"]))
+
+
 def score_meeting(client, extractor, evaluator, scorer, meeting, session, max_pairs):
     """1会議をスコアリングして保存"""
     pairs = extractor.extract(meeting)
@@ -160,6 +190,8 @@ def main():
                         help="対象委員会名 (省略=全委員会)")
     parser.add_argument("--force", action="store_true",
                         help="既存結果を上書き")
+    parser.add_argument("--backfill-speeches", action="store_true",
+                        help="既存結果に議事全文だけ追加（API不使用）")
     args = parser.parse_args()
 
     client = KokkaiAPIClient()
@@ -192,6 +224,11 @@ def main():
 
                 safe_name = m.name_of_meeting.replace("/", "_")
                 out_file = Path("data/results") / f"{m.date}_{house}_{safe_name}.json"
+
+                if args.backfill_speeches:
+                    _backfill_speeches(out_file, m)
+                    continue
+
                 if out_file.exists() and not args.force:
                     logger.info("  スキップ（既存）: %s", out_file.name)
                     continue
