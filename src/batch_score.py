@@ -100,6 +100,35 @@ def _qa_pairs_to_dicts(pairs) -> list[dict]:
     return items
 
 
+def _backfill_qa_pairs(out_file: Path, meeting, extractor, evaluator) -> None:
+    """既存結果JSONにQAペア（テキスト+キャッシュスコア）を追加（API不使用）"""
+    if not out_file.exists():
+        return
+
+    with open(out_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # 既にqa_pairsがあって中身もあればスキップ
+    existing = data.get("qa_pairs", [])
+    if existing and existing[0].get("question_text"):
+        logger.info("  スキップ（QAペアあり）: %s", out_file.name)
+        return
+
+    pairs = extractor.extract(meeting)
+    if not pairs:
+        return
+
+    # キャッシュからスコアだけ読み込む（APIコールなし）
+    for p in pairs:
+        evaluator._load_cache(p)
+
+    data["qa_pairs"] = _qa_pairs_to_dicts(pairs)
+
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    logger.info("  QAペア追加: %s (%d件)", out_file.name, len(pairs))
+
+
 def _backfill_speeches(out_file: Path, meeting) -> None:
     """既存結果JSONに議事全文だけ追加（API不使用）"""
     if not out_file.exists():
@@ -227,6 +256,7 @@ def main():
 
                 if args.backfill_speeches:
                     _backfill_speeches(out_file, m)
+                    _backfill_qa_pairs(out_file, m, extractor, evaluator)
                     continue
 
                 if out_file.exists() and not args.force:
