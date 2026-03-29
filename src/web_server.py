@@ -256,40 +256,84 @@ def _render_member(data: dict, member_name: str) -> str:
             ans = qa.get("answer_scores", {})
             q_avg = qs.get("average", 0)
             a_avg = ans.get("average", 0)
+            rel = qa.get("topic_relevance", 0)
+
+            # 質問の高評価/低評価ポイントを抽出
+            q_dims = [("本質性", qs.get("substantiveness", 0)),
+                      ("具体性", qs.get("specificity", 0)),
+                      ("建設性", qs.get("constructiveness", 0)),
+                      ("新規性", qs.get("novelty", 0))]
+            q_good = [f"{n}{v:.0f}" for n, v in q_dims if v >= 70]
+            q_bad = [f"{n}{v:.0f}" for n, v in q_dims if v < 40]
+
+            a_dims = [("直接性", ans.get("directness", 0)),
+                      ("具体性", ans.get("specificity", 0)),
+                      ("論理性", ans.get("logical_coherence", 0))]
+            a_good = [f"{n}{v:.0f}" for n, v in a_dims if v >= 70]
+            a_bad = [f"{n}{v:.0f}" for n, v in a_dims if v < 40]
+            evasion = ans.get("evasiveness", 0)
+
+            q_verdict = ""
+            if q_good:
+                q_verdict += f'<span class="verdict-good">{" ".join(q_good)}</span> '
+            if q_bad:
+                q_verdict += f'<span class="verdict-bad">{" ".join(q_bad)}</span>'
+
+            a_verdict = ""
+            if a_good:
+                a_verdict += f'<span class="verdict-good">{" ".join(a_good)}</span> '
+            if a_bad:
+                a_verdict += f'<span class="verdict-bad">{" ".join(a_bad)}</span>'
+            if evasion >= 60:
+                a_verdict += f' <span class="verdict-bad">回避度{evasion:.0f}</span>'
 
             qa_html += f'''
             <div class="qa-card">
                 <div class="qa-header">
                     <span class="qa-num">Q&A #{i}</span>
-                    {_score_badge(q_avg)} Q品質 &nbsp; {_score_badge(a_avg)} A品質
-                    &nbsp; <span class="small">議題関連: {qa.get("topic_relevance",0):.0f}</span>
-                    {"<span class='dup-badge'>重複</span>" if qa.get("is_duplicate") else ""}
+                    {_score_badge(q_avg)} 質問 &nbsp; {_score_badge(a_avg)} 答弁
+                    &nbsp; {_score_badge(rel)} 議題関連
+                    {"<span class='dup-badge'>重複質問</span>" if qa.get("is_duplicate") else ""}
                 </div>
+
                 <div class="qa-section">
                     <div class="qa-label">質問 — {qa.get("questioner","")}</div>
-                    <div class="qa-text">{qa.get("question_text","")}</div>
-                    <div class="qa-scores">
-                        本質性 {_score_bar(qs.get("substantiveness",0))}
-                        具体性 {_score_bar(qs.get("specificity",0))}
-                        建設性 {_score_bar(qs.get("constructiveness",0))}
-                        新規性 {_score_bar(qs.get("novelty",0))}
+                    <div class="qa-rationale-box">
+                        <div class="rationale-title">AI評価</div>
+                        <div class="qa-rationale">{qs.get("rationale","")}</div>
+                        <div class="verdict">{q_verdict}</div>
                     </div>
-                    <div class="qa-rationale">{qs.get("rationale","")}</div>
+                    <div class="qa-scores-grid">
+                        <div>本質性 {_score_bar(qs.get("substantiveness",0))}</div>
+                        <div>具体性 {_score_bar(qs.get("specificity",0))}</div>
+                        <div>建設性 {_score_bar(qs.get("constructiveness",0))}</div>
+                        <div>新規性 {_score_bar(qs.get("novelty",0))}</div>
+                    </div>
+                    <details class="qa-fulltext"><summary>質問全文を表示</summary>
+                        <div class="qa-text">{qa.get("question_text","")}</div>
+                    </details>
                 </div>
+
                 <div class="qa-section answer">
                     <div class="qa-label">答弁 — {qa.get("answerer","")}（{qa.get("answerer_position","")}）</div>
-                    <div class="qa-text">{qa.get("answer_text","")}</div>
-                    <div class="qa-scores">
-                        直接性 {_score_bar(ans.get("directness",0))}
-                        具体性 {_score_bar(ans.get("specificity",0))}
-                        論理性 {_score_bar(ans.get("logical_coherence",0))}
-                        回避度 {_score_bar(ans.get("evasiveness",0))}
+                    <div class="qa-rationale-box">
+                        <div class="rationale-title">AI評価</div>
+                        <div class="qa-rationale">{ans.get("rationale","")}</div>
+                        <div class="verdict">{a_verdict}</div>
                     </div>
-                    <div class="qa-rationale">{ans.get("rationale","")}</div>
+                    <div class="qa-scores-grid">
+                        <div>直接性 {_score_bar(ans.get("directness",0))}</div>
+                        <div>具体性 {_score_bar(ans.get("specificity",0))}</div>
+                        <div>論理性 {_score_bar(ans.get("logical_coherence",0))}</div>
+                        <div>回避度 {_score_bar(ans.get("evasiveness",0))}</div>
+                    </div>
+                    <details class="qa-fulltext"><summary>答弁全文を表示</summary>
+                        <div class="qa-text">{qa.get("answer_text","")}</div>
+                    </details>
                 </div>
             </div>'''
     else:
-        qa_html = '<p class="small">個別QAデータが含まれていません。バッチを再実行してください。</p>'
+        qa_html = '<p class="small">個別QAデータが含まれていません。<code>--force</code> でバッチを再実行してください。</p>'
 
     return _page(f"{member_name} — {data.get('meeting_name','')}", f"""
     <a href="/detail?file={fname}" class="back">&larr; {data.get('meeting_name','')}に戻る</a>
@@ -468,10 +512,41 @@ def _render_member_profile(results: list[dict], member_name: str) -> str:
     best = max(timeline, key=lambda t: t["score"])
     worst = min(timeline, key=lambda t: t["score"])
 
-    # SVG 時系列チャート
+    # 軸別平均 → 強み/弱み分析
+    avg_sub = sum(t["substantiveness"] for t in timeline) / len(timeline)
+    avg_spec = sum(t["specificity"] for t in timeline) / len(timeline)
+    avg_rel = sum(t["relevance"] for t in timeline) / len(timeline)
+
+    dims = [
+        ("本質性", avg_sub), ("具体性", avg_spec), ("議題関連率", avg_rel),
+    ]
+    strengths = [f"{n} {v:.0f}" for n, v in dims if v >= 65]
+    weaknesses = [f"{n} {v:.0f}" for n, v in dims if v < 50]
+
+    eval_html = '<div class="eval-summary">'
+    eval_html += f'<p>全{len(timeline)}委員会での平均スコア <strong>{avg_score:.0f}点</strong>。</p>'
+    if strengths:
+        eval_html += f'<p class="eval-good">強み: {" / ".join(strengths)}</p>'
+    if weaknesses:
+        eval_html += f'<p class="eval-bad">課題: {" / ".join(weaknesses)}</p>'
+    if avg_rel >= 70:
+        eval_html += '<p class="eval-note">議題に沿った質問が多く、審議への貢献度が高い。</p>'
+    elif avg_rel < 40:
+        eval_html += '<p class="eval-note">議題から逸脱した質問が目立ち、審議効率への影響が見られる。</p>'
+    if best["score"] - worst["score"] > 30:
+        eval_html += f'<p class="eval-note">委員会によりスコアのばらつきが大きい（{worst["score"]:.0f}〜{best["score"]:.0f}）。得意分野と不得意分野の差が顕著。</p>'
+    eval_html += '</div>'
+
+    # 軸別バー
+    dims_bar = f'''
+    <div class="dim-grid">
+        <div class="dim-item"><div class="dim-label">本質性</div>{_score_bar(avg_sub)}</div>
+        <div class="dim-item"><div class="dim-label">具体性</div>{_score_bar(avg_spec)}</div>
+        <div class="dim-item"><div class="dim-label">議題関連率</div>{_score_bar(avg_rel)}</div>
+    </div>'''
+
     chart_svg = _build_timeline_chart(timeline)
 
-    # 過去の質疑一覧
     history_rows = ""
     for t in reversed(timeline):
         house_badge = "衆" if "衆" in t["house"] else "参"
@@ -501,11 +576,15 @@ def _render_member_profile(results: list[dict], member_name: str) -> str:
         <div class="stat"><div class="stat-val">{worst["score"]:.0f}</div><div class="stat-label">最低スコア</div></div>
     </div>
 
+    <h2>総合評価</h2>
+    {eval_html}
+    {dims_bar}
+
     <h2>スコア推移</h2>
     {chart_svg}
 
     <h2>質疑履歴</h2>
-    <p class="small">行をクリックすると、その委員会での個別質疑評価が見られます</p>
+    <p class="small">行をクリックすると質疑の全文と個別評価が見られます</p>
     <table>
         <thead><tr><th>日付</th><th>回次</th><th>委員会</th><th>総合</th><th>本質性</th><th>具体性</th><th>質問数</th><th>関連率</th></tr></thead>
         <tbody>{history_rows}</tbody>
@@ -611,6 +690,22 @@ a.perf-card:hover {{ background:#243040; }}
 .qa-scores {{ display:flex; gap:16px; flex-wrap:wrap; font-size:0.8rem; margin-bottom:6px; }}
 .qa-rationale {{ font-size:0.8rem; color:#64ffda; font-style:italic; }}
 .small {{ font-size:0.8rem; color:#8892b0; }}
+.eval-summary {{ background:#1a2332; border-radius:8px; padding:16px 20px; margin-bottom:16px; line-height:1.8; }}
+.eval-good {{ color:#27ae60; }}
+.eval-bad {{ color:#e74c3c; }}
+.eval-note {{ color:#8892b0; font-size:0.85rem; }}
+.dim-grid {{ display:flex; gap:24px; margin-bottom:16px; flex-wrap:wrap; }}
+.dim-item {{ display:flex; align-items:center; gap:8px; }}
+.dim-label {{ font-size:0.85rem; color:#8892b0; min-width:80px; }}
+.qa-rationale-box {{ background:#0f1923; border-left:3px solid #64ffda; padding:10px 14px; margin-bottom:12px; border-radius:0 6px 6px 0; }}
+.rationale-title {{ font-size:0.7rem; color:#64ffda; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }}
+.verdict {{ margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; }}
+.verdict-good {{ display:inline-block; padding:2px 8px; border-radius:10px; background:#27ae60; color:#fff; font-size:0.75rem; }}
+.verdict-bad {{ display:inline-block; padding:2px 8px; border-radius:10px; background:#e74c3c; color:#fff; font-size:0.75rem; }}
+.qa-scores-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:6px 24px; margin-bottom:10px; font-size:0.85rem; }}
+.qa-fulltext {{ margin-top:8px; }}
+.qa-fulltext summary {{ cursor:pointer; color:#64ffda; font-size:0.85rem; }}
+.qa-fulltext summary:hover {{ text-decoration:underline; }}
 .btn {{ display:inline-block; padding:8px 16px; background:#64ffda; color:#0f1923; border-radius:6px; text-decoration:none; font-weight:600; font-size:0.85rem; }}
 .btn:hover {{ background:#52e0c4; }}
 .speech {{ margin-bottom:16px; padding:12px 16px; background:#1a2332; border-radius:6px; border-left:3px solid #2a3a4a; }}
