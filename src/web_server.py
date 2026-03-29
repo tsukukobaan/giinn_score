@@ -55,6 +55,27 @@ def _score_bar(score: float, max_val: float = 100) -> str:
     return f'<div class="bar"><div class="fill-bg"><div class="fill" style="width:{pct:.0f}%;background:{color}"></div></div><span>{score:.1f}</span></div>'
 
 
+def _apply_highlights(text: str, highlights: list) -> str:
+    """テキスト中のhighlight箇所にHTMLマークアップを適用"""
+    if not highlights or not text:
+        return text
+
+    # highlightsを長い順にソート（長い方を先にマッチ）
+    sorted_hl = sorted(highlights, key=lambda h: len(h.get("text", "")), reverse=True)
+
+    for h in sorted_hl:
+        hl_text = h.get("text", "")
+        if not hl_text or hl_text not in text:
+            continue
+        sentiment = h.get("sentiment", "positive")
+        comment = h.get("comment", "")
+        cls = "hl-pos" if sentiment == "positive" else "hl-neg"
+        markup = f'<span class="{cls}" title="{comment}">{hl_text}</span>'
+        text = text.replace(hl_text, markup, 1)
+
+    return text
+
+
 def _score_badge(score: float) -> str:
     color = "#27ae60" if score >= 70 else "#f39c12" if score >= 50 else "#e74c3c"
     return f'<span class="score-badge" style="background:{color}">{score:.0f}</span>'
@@ -258,34 +279,34 @@ def _render_member(data: dict, member_name: str) -> str:
             a_avg = ans.get("average", 0)
             rel = qa.get("topic_relevance", 0)
 
-            # 質問の高評価/低評価ポイントを抽出
-            q_dims = [("本質性", qs.get("substantiveness", 0)),
-                      ("具体性", qs.get("specificity", 0)),
-                      ("建設性", qs.get("constructiveness", 0)),
-                      ("新規性", qs.get("novelty", 0))]
-            q_good = [f"{n}{v:.0f}" for n, v in q_dims if v >= 70]
-            q_bad = [f"{n}{v:.0f}" for n, v in q_dims if v < 40]
+            # 新軸（旧軸フォールバック）
+            q_dims = [
+                ("論拠", qs.get("justification") or qs.get("substantiveness", 0)),
+                ("証拠", qs.get("evidence") or qs.get("specificity", 0)),
+                ("建設性", qs.get("constructiveness", 0)),
+                ("新規性", qs.get("novelty", 0)),
+                ("公益", qs.get("public_interest", 0)),
+            ]
+            a_dims = [
+                ("応答性", ans.get("responsiveness") or ans.get("directness", 0)),
+                ("証拠", ans.get("evidence") or ans.get("specificity", 0)),
+                ("論理性", ans.get("logical_coherence", 0)),
+                ("対話姿勢", ans.get("engagement", 0)),
+            ]
 
-            a_dims = [("直接性", ans.get("directness", 0)),
-                      ("具体性", ans.get("specificity", 0)),
-                      ("論理性", ans.get("logical_coherence", 0))]
-            a_good = [f"{n}{v:.0f}" for n, v in a_dims if v >= 70]
-            a_bad = [f"{n}{v:.0f}" for n, v in a_dims if v < 40]
-            evasion = ans.get("evasiveness", 0)
+            def _verdicts(dims):
+                good = [f"{n}{v:.0f}" for n, v in dims if v and v >= 70]
+                bad = [f"{n}{v:.0f}" for n, v in dims if v and v < 40]
+                html = ""
+                if good:
+                    html += f'<span class="verdict-good">{" ".join(good)}</span> '
+                if bad:
+                    html += f'<span class="verdict-bad">{" ".join(bad)}</span>'
+                return html
 
-            q_verdict = ""
-            if q_good:
-                q_verdict += f'<span class="verdict-good">{" ".join(q_good)}</span> '
-            if q_bad:
-                q_verdict += f'<span class="verdict-bad">{" ".join(q_bad)}</span>'
-
-            a_verdict = ""
-            if a_good:
-                a_verdict += f'<span class="verdict-good">{" ".join(a_good)}</span> '
-            if a_bad:
-                a_verdict += f'<span class="verdict-bad">{" ".join(a_bad)}</span>'
-            if evasion >= 60:
-                a_verdict += f' <span class="verdict-bad">回避度{evasion:.0f}</span>'
+            # ハイライト付きテキスト生成
+            q_text_html = _apply_highlights(qa.get("question_text", ""), qs.get("highlights", []))
+            a_text_html = _apply_highlights(qa.get("answer_text", ""), ans.get("highlights", []))
 
             qa_html += f'''
             <div class="qa-card">
@@ -301,16 +322,13 @@ def _render_member(data: dict, member_name: str) -> str:
                     <div class="qa-rationale-box">
                         <div class="rationale-title">AI評価</div>
                         <div class="qa-rationale">{qs.get("rationale","")}</div>
-                        <div class="verdict">{q_verdict}</div>
+                        <div class="verdict">{_verdicts(q_dims)}</div>
                     </div>
                     <div class="qa-scores-grid">
-                        <div>本質性 {_score_bar(qs.get("substantiveness",0))}</div>
-                        <div>具体性 {_score_bar(qs.get("specificity",0))}</div>
-                        <div>建設性 {_score_bar(qs.get("constructiveness",0))}</div>
-                        <div>新規性 {_score_bar(qs.get("novelty",0))}</div>
+                        {"".join(f"<div>{n} {_score_bar(v)}</div>" for n, v in q_dims if v)}
                     </div>
-                    <details class="qa-fulltext"><summary>質問全文を表示</summary>
-                        <div class="qa-text">{qa.get("question_text","")}</div>
+                    <details class="qa-fulltext" open><summary>質問全文</summary>
+                        <div class="qa-text">{q_text_html}</div>
                     </details>
                 </div>
 
@@ -319,21 +337,41 @@ def _render_member(data: dict, member_name: str) -> str:
                     <div class="qa-rationale-box">
                         <div class="rationale-title">AI評価</div>
                         <div class="qa-rationale">{ans.get("rationale","")}</div>
-                        <div class="verdict">{a_verdict}</div>
+                        <div class="verdict">{_verdicts(a_dims)}</div>
                     </div>
                     <div class="qa-scores-grid">
-                        <div>直接性 {_score_bar(ans.get("directness",0))}</div>
-                        <div>具体性 {_score_bar(ans.get("specificity",0))}</div>
-                        <div>論理性 {_score_bar(ans.get("logical_coherence",0))}</div>
-                        <div>回避度 {_score_bar(ans.get("evasiveness",0))}</div>
+                        {"".join(f"<div>{n} {_score_bar(v)}</div>" for n, v in a_dims if v)}
                     </div>
-                    <details class="qa-fulltext"><summary>答弁全文を表示</summary>
-                        <div class="qa-text">{qa.get("answer_text","")}</div>
+                    <details class="qa-fulltext" open><summary>答弁全文</summary>
+                        <div class="qa-text">{a_text_html}</div>
                     </details>
                 </div>
             </div>'''
     else:
         qa_html = '<p class="small">個別QAデータが含まれていません。<code>--force</code> でバッチを再実行してください。</p>'
+
+    # セッション評価
+    session_html = ""
+    for sb in data.get("session_blocks", []):
+        if sb.get("questioner") == member_name:
+            ss = sb.get("session_scores", {})
+            if ss.get("average", 0) > 0:
+                session_html = f'''
+                <div class="qa-card">
+                    <div class="qa-header"><span class="qa-num">質疑ブロック評価</span> {_score_badge(ss.get("average",0))} 総合</div>
+                    <div class="qa-rationale-box">
+                        <div class="rationale-title">質疑全体のAI評価</div>
+                        <div class="qa-rationale">{ss.get("rationale","")}</div>
+                    </div>
+                    <div class="qa-scores-grid">
+                        <div>論点構成力 {_score_bar(ss.get("argument_structure",0))}</div>
+                        <div>掘り下げ力 {_score_bar(ss.get("followup_quality",0))}</div>
+                        <div>時間効率 {_score_bar(ss.get("time_efficiency",0))}</div>
+                        <div>引き出し力 {_score_bar(ss.get("elicitation",0))}</div>
+                        <div>全体的インパクト {_score_bar(ss.get("overall_impact",0))}</div>
+                    </div>
+                </div>'''
+            break
 
     return _page(f"{member_name} — {data.get('meeting_name','')}", f"""
     <a href="/detail?file={fname}" class="back">&larr; {data.get('meeting_name','')}に戻る</a>
@@ -341,12 +379,14 @@ def _render_member(data: dict, member_name: str) -> str:
     <p class="sub"><span class="party-dot" style="background:{color}"></span>{ms['party']} — {data['date']} {data.get('house','')} {data.get('meeting_name','')}</p>
     <div class="stats">
         <div class="stat"><div class="stat-val">{ms.get('overall_score',0):.0f}</div><div class="stat-label">総合スコア</div></div>
-        <div class="stat"><div class="stat-val">{ms.get('avg_substantiveness',0):.0f}</div><div class="stat-label">本質性</div></div>
-        <div class="stat"><div class="stat-val">{ms.get('avg_specificity',0):.0f}</div><div class="stat-label">具体性</div></div>
+        <div class="stat"><div class="stat-val">{ms.get('avg_justification') or ms.get('avg_substantiveness',0):.0f}</div><div class="stat-label">論拠の深さ</div></div>
+        <div class="stat"><div class="stat-val">{ms.get('avg_evidence') or ms.get('avg_specificity',0):.0f}</div><div class="stat-label">エビデンス</div></div>
         <div class="stat"><div class="stat-val">{ms.get('topic_relevance_rate',0):.0f}%</div><div class="stat-label">議題関連率</div></div>
         <div class="stat"><div class="stat-val">{ms.get('question_count',0)}</div><div class="stat-label">質問数</div></div>
     </div>
+    {f'<h2>質疑ブロック評価</h2>{session_html}' if session_html else ''}
     <h2>個別質疑の評価</h2>
+    <p class="small">テキスト中の<span class="hl-pos">緑ハイライト</span>は高評価箇所、<span class="hl-neg">赤ハイライト</span>は低評価箇所です</p>
     {qa_html}
     """)
 
@@ -706,6 +746,8 @@ a.perf-card:hover {{ background:#243040; }}
 .qa-fulltext {{ margin-top:8px; }}
 .qa-fulltext summary {{ cursor:pointer; color:#64ffda; font-size:0.85rem; }}
 .qa-fulltext summary:hover {{ text-decoration:underline; }}
+.hl-pos {{ background:rgba(39,174,96,0.25); border-bottom:2px solid #27ae60; cursor:help; }}
+.hl-neg {{ background:rgba(231,76,60,0.25); border-bottom:2px solid #e74c3c; cursor:help; }}
 .btn {{ display:inline-block; padding:8px 16px; background:#64ffda; color:#0f1923; border-radius:6px; text-decoration:none; font-weight:600; font-size:0.85rem; }}
 .btn:hover {{ background:#52e0c4; }}
 .speech {{ margin-bottom:16px; padding:12px 16px; background:#1a2332; border-radius:6px; border-left:3px solid #2a3a4a; }}
