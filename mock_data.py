@@ -1,0 +1,259 @@
+"""
+テスト用モックデータ
+
+実APIにアクセスせずに全パイプラインをテストするための
+サンプル議事録データ。参議院予算委員会を想定。
+"""
+
+from src.models import Speech, Meeting
+
+
+def generate_mock_meeting() -> Meeting:
+    """参議院予算委員会のモック議事録"""
+    speeches = [
+        # 1. 委員長: 開会宣言
+        Speech(
+            speech_id="S215X003001",
+            speech_order=1,
+            speaker="櫻井充",
+            speaker_yomi="さくらいみつる",
+            speaker_group="",
+            speaker_position="予算委員長",
+            speaker_role="委員長",
+            speech_text="ただいまから予算委員会を開会いたします。令和八年度一般会計予算、令和八年度特別会計予算、令和八年度政府関係機関予算、以上三案を一括して議題といたします。",
+        ),
+        # 2. 委員長: 質問者指名
+        Speech(
+            speech_id="S215X003002",
+            speech_order=2,
+            speaker="櫻井充",
+            speaker_yomi="さくらいみつる",
+            speaker_group="",
+            speaker_position="予算委員長",
+            speaker_role="委員長",
+            speech_text="質疑のある方は順次御発言願います。玉木雄一郎君。",
+        ),
+        # 3. 質問: 玉木（本質的・具体的な質問）
+        Speech(
+            speech_id="S215X003003",
+            speech_order=3,
+            speaker="玉木雄一郎",
+            speaker_yomi="たまきゆういちろう",
+            speaker_group="国民民主党・新緑風会",
+            speaker_position="",
+            speaker_role="",
+            speech_text=(
+                "国民民主党の玉木雄一郎です。本日は予算案の中でも特にエネルギー政策に関連する"
+                "歳出について質問いたします。ホルムズ海峡情勢の緊迫化を受け、石油備蓄の取り崩し"
+                "計画について、現在の国家備蓄日数と、仮にホルムズ海峡が封鎖された場合の想定"
+                "シナリオをお示しください。また、令和八年度予算におけるエネルギー安全保障関連"
+                "予算の前年度比増減とその根拠をご説明ください。さらに、再生可能エネルギーの"
+                "固定価格買取制度の賦課金見通しについても併せてお答えください。"
+            ),
+        ),
+        # 4. 委員長: 答弁者指名
+        Speech(
+            speech_id="S215X003004",
+            speech_order=4,
+            speaker="櫻井充",
+            speaker_yomi="さくらいみつる",
+            speaker_group="",
+            speaker_position="予算委員長",
+            speaker_role="委員長",
+            speech_text="経済産業大臣。",
+        ),
+        # 5. 答弁: 具体的で直接的な答弁
+        Speech(
+            speech_id="S215X003005",
+            speech_order=5,
+            speaker="齋藤健",
+            speaker_yomi="さいとうけん",
+            speaker_group="自由民主党",
+            speaker_position="経済産業大臣",
+            speaker_role="",
+            speech_text=(
+                "玉木議員の御質問にお答えいたします。現在の国家石油備蓄は約百四十五日分で"
+                "ございます。民間備蓄と合わせまして約二百三十日分を確保しております。ホルムズ"
+                "海峡封鎖シナリオについては、エネルギー庁において複数のシナリオ分析を行って"
+                "おり、IEA協調放出の枠組みを含め万全の体制を整えております。令和八年度の"
+                "エネルギー安全保障関連予算は前年度比約八パーセント増の一兆二千億円を計上"
+                "しております。再エネ賦課金については、令和八年度は一キロワット時当たり三・四五"
+                "円を見込んでおります。"
+            ),
+        ),
+        # 6. 委員長: 次の質問者指名
+        Speech(
+            speech_id="S215X003006",
+            speech_order=6,
+            speaker="櫻井充",
+            speaker_yomi="さくらいみつる",
+            speaker_group="",
+            speaker_position="予算委員長",
+            speaker_role="委員長",
+            speech_text="蓮舫君。",
+        ),
+        # 7. 質問: 蓮舫（予算と無関係なスキャンダル追及）
+        Speech(
+            speech_id="S215X003007",
+            speech_order=7,
+            speaker="蓮舫",
+            speaker_yomi="れんほう",
+            speaker_group="立憲民主党・社民",
+            speaker_position="",
+            speaker_role="",
+            speech_text=(
+                "立憲民主党の蓮舫です。総理、最近SNSで話題になっている政治資金の問題について"
+                "お聞きします。裏金問題はいつ解決するんですか。国民は怒っています。"
+                "総理の責任をどうお考えですか。"
+            ),
+        ),
+        # 8. 委員長
+        Speech(
+            speech_id="S215X003008",
+            speech_order=8,
+            speaker="櫻井充",
+            speaker_yomi="さくらいみつる",
+            speaker_group="",
+            speaker_position="予算委員長",
+            speaker_role="委員長",
+            speech_text="内閣総理大臣。",
+        ),
+        # 9. 答弁: 回避的・一般論
+        Speech(
+            speech_id="S215X003009",
+            speech_order=9,
+            speaker="高市早苗",
+            speaker_yomi="たかいちさなえ",
+            speaker_group="自由民主党",
+            speaker_position="内閣総理大臣",
+            speaker_role="",
+            speech_text=(
+                "蓮舫議員にお答えいたします。政治資金の問題については、党として真摯に反省し、"
+                "再発防止策を講じてまいりました。引き続き国民の信頼回復に全力を尽くして"
+                "まいります。"
+            ),
+        ),
+        # 10. 質問: 音喜多（本質的・データ要求型）
+        Speech(
+            speech_id="S215X003010",
+            speech_order=10,
+            speaker="音喜多駿",
+            speaker_yomi="おときたしゅん",
+            speaker_group="日本維新の会",
+            speaker_position="",
+            speaker_role="",
+            speech_text=(
+                "日本維新の会の音喜多駿です。予算案の歳出構造について質問します。社会保障費が"
+                "歳出の三割を超える中、令和八年度予算における社会保障費の自然増の抑制策として"
+                "具体的にどのような施策を盛り込んだのか。また、医療DXによる効率化の具体的な"
+                "予算額と、期待される医療費削減効果の試算をお示しください。さらに、厚生労働省の"
+                "レセプトデータ分析に基づく重複受診・過剰投薬の削減見込み額についても併せて"
+                "お答えください。"
+            ),
+        ),
+        # 11. 委員長
+        Speech(
+            speech_id="S215X003011",
+            speech_order=11,
+            speaker="櫻井充",
+            speaker_yomi="さくらいみつる",
+            speaker_group="",
+            speaker_position="予算委員長",
+            speaker_role="委員長",
+            speech_text="厚生労働大臣。",
+        ),
+        # 12. 答弁: 具体的
+        Speech(
+            speech_id="S215X003012",
+            speech_order=12,
+            speaker="福岡資麿",
+            speaker_yomi="ふくおかたかまろ",
+            speaker_group="自由民主党",
+            speaker_position="厚生労働大臣",
+            speaker_role="",
+            speech_text=(
+                "音喜多議員のご質問にお答えいたします。令和八年度予算における社会保障費の"
+                "自然増は約六千八百億円でございますが、このうち約千五百億円の圧縮を図って"
+                "おります。後発医薬品の使用促進により約四百億円、医療DX関連予算として約"
+                "二千三百億円を計上し、オンライン資格確認の拡充やAI問診の普及促進等により、"
+                "令和十年度までに年間約三千億円の医療費適正化効果を見込んでおります。"
+                "レセプトデータに基づく分析では、重複受診の是正により約八百億円、過剰投薬の"
+                "適正化により約四百億円の削減を見込んでおります。"
+            ),
+        ),
+        # 13. 質問: 辻元（蓮舫と重複する質問）
+        Speech(
+            speech_id="S215X003013",
+            speech_order=13,
+            speaker="辻元清美",
+            speaker_yomi="つじもときよみ",
+            speaker_group="立憲民主党・社民",
+            speaker_position="",
+            speaker_role="",
+            speech_text=(
+                "立憲民主党の辻元清美です。裏金問題について伺います。政治資金の透明性は"
+                "民主主義の根幹です。総理、この問題に対してどう責任を取るおつもりですか。"
+                "国民の怒りは収まっていません。"
+            ),
+        ),
+        # 14. 答弁: 重複回答
+        Speech(
+            speech_id="S215X003014",
+            speech_order=14,
+            speaker="高市早苗",
+            speaker_yomi="たかいちさなえ",
+            speaker_group="自由民主党",
+            speaker_position="内閣総理大臣",
+            speaker_role="",
+            speech_text=(
+                "辻元議員にお答えいたします。先ほど蓮舫議員にもお答えいたしましたとおり、"
+                "政治資金の問題については真摯に対応しております。"
+            ),
+        ),
+        # 15. 質問: 浅田（具体的・建設的）
+        Speech(
+            speech_id="S215X003015",
+            speech_order=15,
+            speaker="浅田均",
+            speaker_yomi="あさだひとし",
+            speaker_group="日本維新の会",
+            speaker_position="",
+            speaker_role="",
+            speech_text=(
+                "日本維新の会の浅田均です。防衛予算について伺います。令和八年度防衛費は"
+                "対GDP比で何パーセントになるのか。NATO基準での算定とわが国の算定基準の"
+                "差異、そしてその差額を具体的にお示しください。また、防衛装備品の"
+                "国産化率の目標値と現状値、ライセンス生産を含めた場合の数値もお答え"
+                "ください。我が党としては、装備品の国際共同開発を推進することで、単価低減と"
+                "技術基盤の強化を同時に達成すべきと考えますが、政府の見解を伺います。"
+            ),
+        ),
+        # 16. 答弁: 政府参考人（役人・初登場）
+        Speech(
+            speech_id="S215X003016",
+            speech_order=16,
+            speaker="増田和夫",
+            speaker_yomi="ますだかずお",
+            speaker_group="",
+            speaker_position="政府参考人（防衛省防衛政策局長）",
+            speaker_role="",
+            speech_text=(
+                "お答えいたします。令和八年度防衛予算は約七兆九千億円で、対GDP比約一・六"
+                "パーセントでございます。NATO基準で算定した場合は約一・八パーセント相当と"
+                "なり、差額は約一・二兆円でございます。防衛装備品の国産化率は現在約四三"
+                "パーセント、ライセンス生産を含めますと約六一パーセントでございます。"
+                "国際共同開発については、次期戦闘機プログラムをはじめ積極的に推進して"
+                "おります。"
+            ),
+        ),
+    ]
+
+    return Meeting(
+        issue_id="121521501X003",
+        session=215,
+        name_of_house="参議院",
+        name_of_meeting="予算委員会",
+        issue="第3号",
+        date="2026-03-10",
+        speeches=speeches,
+    )
