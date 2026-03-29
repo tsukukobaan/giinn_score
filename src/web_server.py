@@ -106,12 +106,12 @@ def _render_index(results: list[dict], session_filter: str = "") -> str:
         cards = f'<h2>{icon} {title}</h2><div class="perf-grid">'
         for m in members:
             color = _party_color(m["party"])
-            cards += f'''<div class="perf-card">
+            cards += f'''<a href="/member_profile?name={quote(m["name"])}" class="perf-card">
                 <div class="perf-score" style="color:{"#27ae60" if m["avg"]>=60 else "#e74c3c"}">{m["avg"]:.0f}</div>
                 <div class="perf-name">{m["name"]}</div>
                 <div class="perf-party"><span class="party-dot" style="background:{color}"></span>{m["party"]}</div>
                 <div class="perf-meta">{m["total_q"]}問 / {m["appearances"]}委員会</div>
-            </div>'''
+            </a>'''
         cards += '</div>'
         return cards
 
@@ -385,6 +385,128 @@ def _render_party(results: list[dict], party_name: str, session_filter: str = ""
 
 
 # ============================================================
+# 議員プロフィール（横断まとめ）
+# ============================================================
+
+def _render_member_profile(results: list[dict], member_name: str) -> str:
+    # 全結果からこの議員の出演データを収集
+    timeline = []  # [{date, house, meeting, score, file, questions}, ...]
+    party = ""
+
+    for r in results:
+        for ms in r.get("member_scores", []):
+            if ms["name"] == member_name:
+                if not party:
+                    party = ms.get("party", "")
+                timeline.append({
+                    "date": r["date"],
+                    "house": r.get("house", ""),
+                    "meeting": r.get("meeting_name", ""),
+                    "file": r.get("_file", ""),
+                    "score": ms.get("overall_score", 0),
+                    "q_quality": ms.get("avg_question_quality", 0),
+                    "substantiveness": ms.get("avg_substantiveness", 0),
+                    "specificity": ms.get("avg_specificity", 0),
+                    "questions": ms.get("question_count", 0),
+                    "relevance": ms.get("topic_relevance_rate", 0),
+                    "session": r.get("session", 0),
+                })
+
+    if not timeline:
+        return _page("Not Found", '<a href="/" class="back">&larr;</a><h1>議員データなし</h1>')
+
+    timeline.sort(key=lambda t: t["date"])
+    color = _party_color(party)
+    avg_score = sum(t["score"] for t in timeline) / len(timeline)
+    total_q = sum(t["questions"] for t in timeline)
+    best = max(timeline, key=lambda t: t["score"])
+    worst = min(timeline, key=lambda t: t["score"])
+
+    # SVG 時系列チャート
+    chart_svg = _build_timeline_chart(timeline)
+
+    # 過去の質疑一覧
+    history_rows = ""
+    for t in reversed(timeline):
+        house_badge = "衆" if "衆" in t["house"] else "参"
+        house_cls = "shu" if house_badge == "衆" else "san"
+        score_color = "#27ae60" if t["score"] >= 70 else "#f39c12" if t["score"] >= 50 else "#e74c3c"
+        history_rows += f'''
+        <tr onclick="location.href='/member?name={quote(member_name)}&file={t["file"]}'">
+            <td>{t["date"]}</td>
+            <td class="small">第{t["session"]}回</td>
+            <td><span class="badge {house_cls}">{house_badge}</span> {t["meeting"]}</td>
+            <td><span style="color:{score_color};font-weight:bold">{t["score"]:.0f}</span></td>
+            <td>{_score_bar(t["substantiveness"])}</td>
+            <td>{_score_bar(t["specificity"])}</td>
+            <td class="num">{t["questions"]}問</td>
+            <td class="num">{t["relevance"]:.0f}%</td>
+        </tr>'''
+
+    return _page(f"{member_name}", f"""
+    <a href="/" class="back">&larr; 一覧に戻る</a>
+    <h1>{member_name}</h1>
+    <p class="sub"><span class="party-dot" style="background:{color}"></span>{party}</p>
+    <div class="stats">
+        <div class="stat"><div class="stat-val">{avg_score:.0f}</div><div class="stat-label">平均スコア</div></div>
+        <div class="stat"><div class="stat-val">{total_q}</div><div class="stat-label">総質問数</div></div>
+        <div class="stat"><div class="stat-val">{len(timeline)}</div><div class="stat-label">登場委員会</div></div>
+        <div class="stat"><div class="stat-val">{best["score"]:.0f}</div><div class="stat-label">最高スコア</div></div>
+        <div class="stat"><div class="stat-val">{worst["score"]:.0f}</div><div class="stat-label">最低スコア</div></div>
+    </div>
+
+    <h2>スコア推移</h2>
+    {chart_svg}
+
+    <h2>質疑履歴</h2>
+    <p class="small">行をクリックすると、その委員会での個別質疑評価が見られます</p>
+    <table>
+        <thead><tr><th>日付</th><th>回次</th><th>委員会</th><th>総合</th><th>本質性</th><th>具体性</th><th>質問数</th><th>関連率</th></tr></thead>
+        <tbody>{history_rows}</tbody>
+    </table>
+    """)
+
+
+def _build_timeline_chart(timeline: list[dict]) -> str:
+    """SVG で時系列スコアチャートを描画"""
+    if len(timeline) < 2:
+        return '<p class="small">データが2件以上でチャートを表示します</p>'
+
+    w, h = 800, 200
+    pad_x, pad_y = 50, 20
+    chart_w = w - pad_x * 2
+    chart_h = h - pad_y * 2
+
+    n = len(timeline)
+    x_step = chart_w / max(n - 1, 1)
+
+    points = []
+    labels = []
+    for i, t in enumerate(timeline):
+        x = pad_x + i * x_step
+        y = pad_y + chart_h - (t["score"] / 100 * chart_h)
+        points.append(f"{x:.0f},{y:.0f}")
+        color = "#27ae60" if t["score"] >= 70 else "#f39c12" if t["score"] >= 50 else "#e74c3c"
+        labels.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="4" fill="{color}"/>')
+        if i % max(1, n // 8) == 0 or i == n - 1:
+            labels.append(f'<text x="{x:.0f}" y="{h - 2}" text-anchor="middle" fill="#8892b0" font-size="10">{t["date"][5:]}</text>')
+            labels.append(f'<text x="{x:.0f}" y="{y - 8:.0f}" text-anchor="middle" fill="#e0e0e0" font-size="11" font-weight="bold">{t["score"]:.0f}</text>')
+
+    polyline = f'<polyline points="{" ".join(points)}" fill="none" stroke="#64ffda" stroke-width="2"/>'
+
+    # Y軸ガイド
+    guides = ""
+    for v in [25, 50, 75]:
+        gy = pad_y + chart_h - (v / 100 * chart_h)
+        guides += f'<line x1="{pad_x}" y1="{gy:.0f}" x2="{w - pad_x}" y2="{gy:.0f}" stroke="#1a2a3a" stroke-dasharray="4"/>'
+        guides += f'<text x="{pad_x - 8}" y="{gy + 4:.0f}" text-anchor="end" fill="#5a6a7a" font-size="10">{v}</text>'
+
+    return f'''<svg viewBox="0 0 {w} {h}" style="width:100%;max-width:{w}px;background:#1a2332;border-radius:8px;padding:8px;margin-bottom:16px;">
+        {guides}{polyline}{"".join(labels)}
+    </svg>'''
+
+
+# ============================================================
 # HTML テンプレート
 # ============================================================
 
@@ -424,7 +546,8 @@ tr:hover {{ background:#1a2a3a; cursor:pointer; }}
 .tab:hover {{ background:#2a3342; }}
 .tab.active {{ background:#64ffda; color:#0f1923; font-weight:600; }}
 .perf-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }}
-.perf-card {{ background:#1a2332; border-radius:8px; padding:16px; text-align:center; }}
+.perf-card {{ background:#1a2332; border-radius:8px; padding:16px; text-align:center; text-decoration:none; color:inherit; display:block; transition:background .15s; }}
+a.perf-card:hover {{ background:#243040; }}
 .perf-score {{ font-size:2.2rem; font-weight:bold; }}
 .perf-name {{ font-size:1rem; font-weight:600; margin:6px 0 2px; }}
 .perf-party {{ font-size:0.8rem; color:#8892b0; }}
@@ -481,6 +604,14 @@ class Handler(BaseHTTPRequestHandler):
                     self._respond(200, _render_member(data, name))
                     return
             self._respond(404, _page("Not Found", "<h1>Not Found</h1>"))
+
+        elif path == "/member_profile":
+            name = qs.get("name", [None])[0]
+            if name:
+                results = _load_results()
+                self._respond(200, _render_member_profile(results, name))
+            else:
+                self._respond(404, _page("Not Found", "<h1>Not Found</h1>"))
 
         elif path == "/party":
             party = qs.get("party", [None])[0]

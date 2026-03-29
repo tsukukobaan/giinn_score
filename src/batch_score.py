@@ -9,7 +9,6 @@ Usage:
 import argparse
 import json
 import logging
-import sys
 import tempfile
 from pathlib import Path
 

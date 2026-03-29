@@ -17,8 +17,6 @@ import logging
 import time
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlencode
-
 from models import Speech, Meeting
 
 logger = logging.getLogger(__name__)
