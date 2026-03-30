@@ -85,7 +85,7 @@ def _score_badge(score: float) -> str:
 # トップページ
 # ============================================================
 
-def _render_index(results: list[dict], session_filter: str = "") -> str:
+def _render_index(results: list[dict], session_filter: str = "", page: int = 1) -> str:
     sessions = sorted({r.get("session", 0) for r in results if r.get("session")}, reverse=True)
     if session_filter:
         results = [r for r in results if str(r.get("session", "")) == session_filter]
@@ -136,13 +136,53 @@ def _render_index(results: list[dict], session_filter: str = "") -> str:
         cards += '</div>'
         return cards
 
-    perf_html = _perf_cards(top5, "高評価議員", "\U0001f3c6") + _perf_cards(bottom5, "低評価議員", "\u26a0\ufe0f")
+    session_qs = f"session={session_filter}&" if session_filter else ""
+    perf_html = _perf_cards(top5, "高評価議員", "\U0001f3c6")
+    perf_html += f'<p><a href="/ranking?{session_qs}sort=top" class="btn-link">全議員ランキングを見る &rarr;</a></p>'
+    perf_html += _perf_cards(bottom5, "低評価議員", "\u26a0\ufe0f")
+    if bottom5:
+        perf_html += f'<p><a href="/ranking?{session_qs}sort=bottom" class="btn-link">ワーストランキングを見る &rarr;</a></p>'
 
-    # 委員会一覧
-    rows = ""
+    # 政党カード
+    party_totals: dict[str, dict] = defaultdict(lambda: {"scores": [], "questions": 0, "members": set(), "houses": set()})
     for r in results:
-        if r.get("total_qa_pairs", 0) == 0:
-            continue
+        for ps in r.get("party_scores", []):
+            if ps.get("overall_score", 0) > 0:
+                pt = party_totals[ps["party"]]
+                pt["scores"].append(ps["overall_score"])
+                pt["questions"] += ps.get("total_questions", 0)
+                pt["houses"].add(r.get("house", ""))
+        for ms in r.get("member_scores", []):
+            if ms.get("avg_question_quality", 0) > 0:
+                party_totals[ms.get("party", "")]["members"].add(ms["name"])
+
+    party_cards = sorted(
+        [{"party": k, "avg": sum(v["scores"])/len(v["scores"]) if v["scores"] else 0,
+          "questions": v["questions"], "members": len(v["members"]), "houses": v["houses"]}
+         for k, v in party_totals.items() if v["scores"]],
+        key=lambda x: x["avg"], reverse=True,
+    )
+    party_html = '<h2>政党別評価</h2><div class="perf-grid">'
+    for pc in party_cards:
+        color = _party_color(pc["party"])
+        house_icons = " ".join(f'<span class="badge {"shu" if "衆" in h else "san"}">{"衆" if "衆" in h else "参"}</span>' for h in sorted(pc["houses"]))
+        party_html += f'''<a href="/party?party={quote(pc["party"])}&session={session_filter}" class="perf-card">
+            <div class="perf-score" style="color:{"#27ae60" if pc["avg"]>=60 else "#e74c3c"}">{pc["avg"]:.0f}</div>
+            <div class="perf-name"><span class="party-dot" style="background:{color}"></span>{pc["party"]}</div>
+            <div class="perf-meta">{pc["members"]}人 / {pc["questions"]}問 {house_icons}</div>
+        </a>'''
+    party_html += '</div>'
+
+    # 委員会一覧（ページネーション）
+    committee_results = [r for r in results if r.get("total_qa_pairs", 0) > 0]
+    per_page = 20
+    total_pages = max(1, (len(committee_results) + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    page_start = (page - 1) * per_page
+    page_results = committee_results[page_start:page_start + per_page]
+
+    rows = ""
+    for r in page_results:
         house_badge = "衆" if "衆" in r.get("house", "") else "参"
         house_cls = "shu" if house_badge == "衆" else "san"
         session_label = f'第{r["session"]}回' if r.get("session") else ""
@@ -155,14 +195,110 @@ def _render_index(results: list[dict], session_filter: str = "") -> str:
             <td class="num">{r.get('topic_relevance_rate',0):.0f}%</td>
         </tr>"""
 
+    # ページネーションリンク
+    base_url = f"/?session={session_filter}&" if session_filter else "/?"
+    pager = '<div class="pager">'
+    if page > 1:
+        pager += f'<a href="{base_url}page={page-1}" class="tab">&larr; 前</a>'
+    for p in range(1, total_pages + 1):
+        cls = "active" if p == page else ""
+        pager += f'<a href="{base_url}page={p}" class="tab {cls}">{p}</a>'
+    if page < total_pages:
+        pager += f'<a href="{base_url}page={page+1}" class="tab">次 &rarr;</a>'
+    pager += '</div>'
+
     return _page("GiinScore", f"""
     <h1>GiinScore</h1>
     <p class="sub">AI による国会質疑品質の定量評価</p>
     {tabs}
     {perf_html}
-    <h2>委員会別スコア</h2>
+    {party_html}
+    <h2>委員会別スコア <span class="small">({len(committee_results)}件)</span></h2>
     <table>
         <thead><tr><th>日付</th><th>回次</th><th>委員会</th><th>QAペア</th><th>議題関連率</th></tr></thead>
+        <tbody>{rows}</tbody>
+    </table>
+    {pager}
+    """)
+
+
+# ============================================================
+# 全議員ランキング
+# ============================================================
+
+def _render_ranking(results: list[dict], session_filter: str = "",
+                    house_filter: str = "", sort: str = "top") -> str:
+    if session_filter:
+        results = [r for r in results if str(r.get("session", "")) == session_filter]
+    if house_filter:
+        results = [r for r in results if house_filter in r.get("house", "")]
+
+    sessions = sorted({r.get("session", 0) for r in _load_results() if r.get("session")}, reverse=True)
+
+    all_members: dict[str, dict] = defaultdict(lambda: {"scores": [], "party": "", "questions": 0, "houses": set()})
+    for r in results:
+        for ms in r.get("member_scores", []):
+            if ms.get("avg_question_quality", 0) > 0:
+                m = all_members[ms["name"]]
+                m["scores"].append(ms["overall_score"])
+                m["party"] = ms.get("party", "")
+                m["questions"] += ms.get("question_count", 0)
+                m["houses"].add(r.get("house", ""))
+
+    ranked = []
+    for name, m in all_members.items():
+        avg = sum(m["scores"]) / len(m["scores"]) if m["scores"] else 0
+        ranked.append({"name": name, "party": m["party"], "avg": avg,
+                       "appearances": len(m["scores"]), "questions": m["questions"],
+                       "houses": m["houses"]})
+
+    ranked.sort(key=lambda x: x["avg"], reverse=(sort == "top"))
+
+    # フィルタータブ
+    base = f"/ranking?sort={sort}&session={session_filter}"
+    house_tabs = f'''<div class="tabs">
+        <a href="{base}&house=" class="tab {"active" if not house_filter else ""}">全院</a>
+        <a href="{base}&house=衆議院" class="tab {"active" if house_filter=="衆議院" else ""}">衆議院</a>
+        <a href="{base}&house=参議院" class="tab {"active" if house_filter=="参議院" else ""}">参議院</a>
+    </div>'''
+
+    session_tabs = f'<div class="tabs"><a href="/ranking?sort={sort}&house={house_filter}" class="tab {"active" if not session_filter else ""}">全回次</a>'
+    for s in sessions:
+        cls = "active" if session_filter == str(s) else ""
+        session_tabs += f'<a href="/ranking?sort={sort}&house={house_filter}&session={s}" class="tab {cls}">第{s}回</a>'
+    session_tabs += '</div>'
+
+    sort_tabs = f'''<div class="tabs">
+        <a href="/ranking?sort=top&session={session_filter}&house={house_filter}" class="tab {"active" if sort=="top" else ""}">高評価順</a>
+        <a href="/ranking?sort=bottom&session={session_filter}&house={house_filter}" class="tab {"active" if sort=="bottom" else ""}">低評価順</a>
+    </div>'''
+
+    rows = ""
+    for i, m in enumerate(ranked, 1):
+        color = _party_color(m["party"])
+        house_icons = " ".join(f'<span class="badge {"shu" if "衆" in h else "san"}">{"衆" if "衆" in h else "参"}</span>' for h in sorted(m["houses"]))
+        score_color = "#27ae60" if m["avg"] >= 70 else "#f39c12" if m["avg"] >= 50 else "#e74c3c"
+        rows += f'''
+        <tr onclick="location.href='/member_profile?name={quote(m["name"])}'">
+            <td class="num">{i}</td>
+            <td>{m["name"]}</td>
+            <td><span class="party-dot" style="background:{color}"></span>{m["party"]}</td>
+            <td>{house_icons}</td>
+            <td><span style="color:{score_color};font-weight:bold;font-size:1.1rem">{m["avg"]:.1f}</span></td>
+            <td class="num">{m["questions"]}問</td>
+            <td class="num">{m["appearances"]}回</td>
+        </tr>'''
+
+    title = "高評価ランキング" if sort == "top" else "低評価ランキング"
+    return _page(f"議員{title}", f"""
+    <a href="/" class="back">&larr; トップに戻る</a>
+    <h1>議員{title}</h1>
+    <p class="sub">{len(ranked)}人</p>
+    {session_tabs}
+    {house_tabs}
+    {sort_tabs}
+    <table>
+        <thead><tr><th>#</th><th>議員</th><th>政党</th><th>院</th><th>平均スコア</th><th>質問数</th><th>登場回数</th></tr></thead>
         <tbody>{rows}</tbody>
     </table>
     """)
@@ -739,6 +875,9 @@ a.perf-card:hover {{ background:#243040; }}
 .role-badge {{ display:inline-block; padding:1px 8px; border-radius:10px; font-size:0.7rem; margin-left:6px; vertical-align:middle; }}
 .role-badge.chair {{ background:#2980b9; color:#fff; }}
 .role-badge.unscored {{ background:#7f8c8d; color:#fff; }}
+.pager {{ display:flex; gap:6px; justify-content:center; margin:16px 0; flex-wrap:wrap; }}
+.btn-link {{ color:#64ffda; text-decoration:none; font-size:0.9rem; }}
+.btn-link:hover {{ text-decoration:underline; }}
 .qa-card {{ background:#1a2332; border-radius:8px; padding:20px; margin-bottom:16px; }}
 .qa-header {{ margin-bottom:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
 .qa-num {{ font-weight:bold; color:#64ffda; }}
@@ -794,7 +933,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/" or path == "":
             results = _load_results()
             session_filter = qs.get("session", [""])[0]
-            html = _render_index(results, session_filter)
+            page = int(qs.get("page", ["1"])[0])
+            html = _render_index(results, session_filter, page)
+            self._respond(200, html)
+
+        elif path == "/ranking":
+            results = _load_results()
+            session_filter = qs.get("session", [""])[0]
+            house_filter = qs.get("house", [""])[0]
+            sort = qs.get("sort", ["top"])[0]
+            html = _render_ranking(results, session_filter, house_filter, sort)
             self._respond(200, html)
 
         elif path == "/detail":
