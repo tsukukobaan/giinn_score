@@ -169,19 +169,18 @@ def _backfill_speeches(out_file: Path, meeting) -> None:
     logger.info("  全文追加: %s (%d発言)", out_file.name, len(data["speeches"]))
 
 
-def score_meeting(client, extractor, evaluator, scorer, meeting, session, max_pairs):
-    """1会議をスコアリングして保存"""
+def score_meeting(client, extractor, evaluator, scorer, meeting, session):
+    """1会議をスコアリングして保存（全ペア評価）"""
     pairs = extractor.extract(meeting)
     if not pairs:
         logger.info("  QAペアなし、スキップ")
         return None
 
-    # 評価対象を制限
-    eval_pairs = pairs if max_pairs == 0 else pairs[:max_pairs]
-    logger.info("  %d/%dペアを評価", len(eval_pairs), len(pairs))
+    logger.info("  %dペアを評価", len(pairs))
 
-    evaluator.evaluate_batch(eval_pairs)
-    detect_duplicates(eval_pairs)
+    evaluator.evaluate_batch(pairs)
+    detect_duplicates(pairs)
+    eval_pairs = pairs
 
     # セッション（質疑ブロック）評価
     session_blocks = extractor.extract_sessions(eval_pairs)
@@ -248,8 +247,8 @@ def main():
     parser = argparse.ArgumentParser(description="バッチスコアリング")
     parser.add_argument("--sessions", nargs="+", type=int, required=True,
                         help="処理する国会回次")
-    parser.add_argument("--max-pairs", type=int, default=15,
-                        help="会議あたりの最大評価ペア数 (0=全件)")
+    parser.add_argument("--max-meetings", type=int, default=0,
+                        help="処理する会議数の上限 (0=全件)")
     parser.add_argument("--meeting", default=None,
                         help="対象委員会名 (省略=全委員会)")
     parser.add_argument("--force", action="store_true",
@@ -265,6 +264,7 @@ def main():
     evaluator = QAPairEvaluator()
     scorer = ScoreAggregator()
 
+    meetings_processed = 0
     for session in args.sessions:
         if args.meeting:
             # 特定委員会のみ（衆参両院）
@@ -312,10 +312,20 @@ def main():
                         logger.info("  スキップ（既存）: %s", out_file.name)
                         continue
 
-                score_meeting(client, extractor, evaluator, scorer,
-                              m, session, args.max_pairs)
+                if args.max_meetings and meetings_processed >= args.max_meetings:
+                    logger.info("  会議数上限 (%d) に到達", args.max_meetings)
+                    break
 
-    logger.info("=== バッチ完了 ===")
+                score_meeting(client, extractor, evaluator, scorer,
+                              m, session)
+                meetings_processed += 1
+
+            if args.max_meetings and meetings_processed >= args.max_meetings:
+                break
+        if args.max_meetings and meetings_processed >= args.max_meetings:
+            break
+
+    logger.info("=== バッチ完了: %d会議処理 ===", meetings_processed)
 
 
 if __name__ == "__main__":
