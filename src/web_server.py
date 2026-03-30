@@ -90,11 +90,11 @@ def _render_index(results: list[dict], session_filter: str = "") -> str:
     if session_filter:
         results = [r for r in results if str(r.get("session", "")) == session_filter]
 
-    # ハイ/ローパフォーマー集計
+    # ハイ/ローパフォーマー集計（スコア0=未評価を除外）
     all_members: dict[str, list] = defaultdict(list)
     for r in results:
         for ms in r.get("member_scores", []):
-            if ms.get("overall_score", 0) > 0:
+            if ms.get("avg_question_quality", 0) > 0:
                 all_members[ms["name"]].append(ms)
 
     member_avg = []
@@ -191,17 +191,33 @@ def _render_detail(data: dict) -> str:
         </tr>"""
 
     member_rows = ""
-    for i, ms in enumerate(data.get("member_scores", [])[:30]):
+    all_member_scores = data.get("member_scores", [])
+    # 委員長判定: speechesから委員長の名前を取得
+    chair_names = set()
+    for s in data.get("speeches", []):
+        if any(kw in (s.get("speaker_role") or s.get("speaker_position") or "")
+               for kw in ["委員長", "議長", "会長"]):
+            chair_names.add(s.get("speaker", ""))
+
+    for i, ms in enumerate(all_member_scores[:40]):
         color = _party_color(ms["party"])
+        is_chair = ms["name"] in chair_names
+        is_unscored = ms.get("avg_question_quality", 0) == 0
+        badge = ""
+        if is_chair:
+            badge = '<span class="role-badge chair">委員長</span>'
+        elif is_unscored:
+            badge = '<span class="role-badge unscored">未評価</span>'
+        score_cell = _score_bar(ms.get('overall_score', 0)) if not (is_chair or is_unscored) else '<span class="small">—</span>'
         member_rows += f"""
         <tr onclick="location.href='/member?name={quote(ms["name"])}&file={fname}'">
             <td class="num">{i+1}</td>
-            <td>{ms['name']}</td>
+            <td>{ms['name']} {badge}</td>
             <td><span class="party-dot" style="background:{color}"></span>{ms['party']}</td>
             <td class="num">{ms.get('question_count',0)}</td>
-            <td>{_score_bar(ms.get('overall_score',0))}</td>
-            <td>{_score_bar(ms.get('avg_substantiveness',0))}</td>
-            <td>{_score_bar(ms.get('avg_specificity',0))}</td>
+            <td>{score_cell}</td>
+            <td>{_score_bar(ms.get('avg_substantiveness',0)) if not is_unscored else '<span class="small">—</span>'}</td>
+            <td>{_score_bar(ms.get('avg_specificity',0)) if not is_unscored else '<span class="small">—</span>'}</td>
             <td class="num">{ms.get('topic_relevance_rate',0):.0f}%</td>
         </tr>"""
 
@@ -720,6 +736,9 @@ a.perf-card:hover {{ background:#243040; }}
 .perf-meta {{ font-size:0.75rem; color:#5a6a7a; margin-top:4px; }}
 .score-badge {{ display:inline-block; padding:2px 8px; border-radius:10px; color:#fff; font-size:0.8rem; font-weight:bold; }}
 .dup-badge {{ display:inline-block; padding:2px 8px; border-radius:10px; background:#e74c3c; color:#fff; font-size:0.75rem; }}
+.role-badge {{ display:inline-block; padding:1px 8px; border-radius:10px; font-size:0.7rem; margin-left:6px; vertical-align:middle; }}
+.role-badge.chair {{ background:#2980b9; color:#fff; }}
+.role-badge.unscored {{ background:#7f8c8d; color:#fff; }}
 .qa-card {{ background:#1a2332; border-radius:8px; padding:20px; margin-bottom:16px; }}
 .qa-header {{ margin-bottom:12px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
 .qa-num {{ font-weight:bold; color:#64ffda; }}
